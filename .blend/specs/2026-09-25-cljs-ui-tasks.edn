@@ -9,9 +9,9 @@
        :files "core.clj, core.cljs (shell)"}
   :t4 {:name "4. Events and test helpers" :state :done
        :files "events.cljs, testing.cljs"}
-  :t5 {:name "5. DOM mount" :state :in-progress
+  :t5 {:name "5. DOM mount" :state :done
        :files "dom.cljs (normalize, attrs, create, mount!)"}
-  :t6 {:name "6. DOM updates" :state :new
+  :t6 {:name "6. DOM updates" :state :in-progress
        :files "dom.cljs (patch, keyed diff, runner)"}
   :t7 {:name "7. Public API + 1000-row criterion" :state :new
        :files "core.cljs, criteria_test.cljs"}
