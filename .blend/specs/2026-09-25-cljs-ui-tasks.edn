@@ -1,0 +1,40 @@
+;; Implementation tasks for docs/superpowers/plans/2026-09-25-cljs-ui.md
+;; Executor: set :state (:in-progress / :done / :blocked + :reason) alongside each task's checkboxes.
+{:nodes
+ {:t1 {:name "1. Scaffold and path trie" :state :new
+       :files "package.json, shadow-cljs.edn, src/cljs_ui/trie.cljs"}
+  :t2 {:name "2. State, scheduler and binding cells" :state :new
+       :files "state.cljs, scheduler.cljs, cells.cljs"}
+  :t3 {:name "3. defc macro" :state :new
+       :files "core.clj, core.cljs (shell)"}
+  :t4 {:name "4. Events and test helpers" :state :new
+       :files "events.cljs, testing.cljs"}
+  :t5 {:name "5. DOM mount" :state :new
+       :files "dom.cljs (normalize, attrs, create, mount!)"}
+  :t6 {:name "6. DOM updates" :state :new
+       :files "dom.cljs (patch, keyed diff, runner)"}
+  :t7 {:name "7. Public API + 1000-row criterion" :state :new
+       :files "core.cljs, criteria_test.cljs"}
+  :t8 {:name "8. TodoMVC example" :state :new
+       :files "examples/todomvc"}
+  :t9 {:name "9. Measurements and README" :state :new
+       :files "bb.edn, scripts/count-tokens.cjs, README.md"}}
+
+ :edges
+ {[:t1 :t2] {:direction :->}
+  [:t2 :t3] {:direction :->}
+  [:t2 :t4] {:direction :->}
+  [:t3 :t5] {:direction :->}
+  [:t4 :t5] {:direction :->}
+  [:t5 :t6] {:direction :->}
+  [:t6 :t7] {:direction :->}
+  [:t7 :t8] {:direction :->}
+  [:t8 :t9] {:direction :->}}
+
+ :boxes
+ {:trie     {:name "trie" :type "unit" :ref "2026-09-25-cljs-ui.edn" :components #{:t1}}
+  :cells    {:name "cells + scheduler" :type "unit" :ref "2026-09-25-cljs-ui.edn" :components #{:t2}}
+  :core     {:name "core (defc, API)" :type "unit" :ref "2026-09-25-cljs-ui.edn" :components #{:t3 :t7}}
+  :events   {:name "events" :type "unit" :ref "2026-09-25-cljs-ui.edn" :components #{:t4}}
+  :dom      {:name "dom" :type "unit" :ref "2026-09-25-cljs-ui.edn" :components #{:t5 :t6}}
+  :proof    {:name "example + measurements" :type "unit" :ref "2026-09-25-cljs-ui.edn" :components #{:t8 :t9}}}}
