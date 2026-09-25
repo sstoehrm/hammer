@@ -44,13 +44,14 @@ Units, each testable on its own:
 
 | Unit | Responsibility | Depends on |
 |---|---|---|
-| `events` | registry, queue, effect application | `trie` (notify) |
+| `state` | `app-db` atom and the root trie node | `trie` |
+| `events` | registry, queue, effect application | `state`, `trie`, `cells`, `scheduler` |
 | `trie` | path subscriptions, change propagation with pruning | — |
-| `cells` | per-instance binding cells, lazy recompute, change detection | `trie` |
-| `scheduler` | dirty set, depth-ordered flush | `cells`, `dom` |
-| `dom` | hiccup normalization, keyed diff, patch, mount/unmount | `cells` |
+| `cells` | per-instance binding cells, lazy recompute, change detection | `state`, `trie`, `scheduler` |
+| `scheduler` | dirty set, depth-ordered flush; calls a runner that `dom` installs | — |
+| `dom` | hiccup normalization, keyed diff, patch, mount/unmount | `cells`, `events`, `scheduler` |
 | `core` | public API (`defc` macro, re-exports) | all |
-| `test` | `flush!`, render counters | `scheduler` |
+| `testing` | `flush!`, render counters, `reset-app!` | `events`, `scheduler`, `dom` |
 
 ## Public API
 
@@ -99,6 +100,10 @@ kind of each binding is decided by the form of its init expression:
 | `(atom ...)` or other `IWatchable` | local | created once per instance at mount; `add-watch` marks the cell stale; the symbol is bound to the atom (deref in body) |
 | anything else | derived | macro collects symbols referring to props or earlier bindings → dependency set; re-run only when a dependency changed |
 
+Props and binding names must be distinct plain symbols; `defc` throws at
+compile time otherwise. A vector literal is always a path; build a vector
+value with `(vector a b)`.
+
 The kind is decided at macro time for vector literals; everything else is
 decided at mount by evaluating the init once: an `IWatchable` result is a
 local, otherwise the expression is derived. A derived expression reads
@@ -113,12 +118,16 @@ from (same as Reagent form-2). This is documented behaviour.
 
 - Tags: `:div`, `:div.a.b#id`. Children: elements, strings, numbers, seqs
   (flattened), `nil`/`false` (skipped), `[component & args]`.
-- `:on-<event>`: an event vector → `(dispatch v)`; a fn → called with the DOM event.
+- `:on-<event>`: `<event>` is the literal DOM event name (`:on-click`, `:on-keydown`,
+  `:on-dblclick`, `:on-input`). An event vector → `(dispatch v)`; a fn → called
+  with the DOM event.
 - `:ref`: fn called with the element after insertion and with `nil` on removal.
 - `:class`: string or collection of strings. `:style`: map, applied per key.
 - `value`, `checked`, `selected` are set as DOM properties; everything else
   via `setAttribute`.
-- Keys: `^{:key k}` metadata only.
+- Keys: `^{:key k}` metadata only. Keyed diffing applies when every child has a
+  key and keys are unique; duplicate keys log a warning and fall back to the
+  index diff.
 
 ## Runtime
 
@@ -189,14 +198,17 @@ only dirty instances are diffed, never the whole tree.
 
 | Failure | Behaviour |
 |---|---|
-| Unknown event id or fx key | `console.error`, skip, continue |
+| Unknown event id or fx key | `console.error`, skip, continue; the fx message hints "did the handler return db instead of {:db db}?" |
+| Dispatched value is not a vector | `console.error`, skip |
 | Handler throws | log event + error, db unchanged, continue with the queue |
 | Render throws | log component name, keep that instance's previous DOM, continue other instances |
 | `dispatch-sync` inside a handler | throw |
 
 ## Testing
 
-All tests drive rendering through `flush!` (test namespace); no real rAF timing.
+All tests drive rendering through `cljs-ui.testing/flush!`; no real rAF timing.
+Run with `npm test` (`shadow-cljs compile test && node target/test.js`; the
+node process exits non-zero on failure, shadow's `:autorun` does not).
 
 | Layer | Env | Covers |
 |---|---|---|
@@ -209,7 +221,9 @@ All tests drive rendering through `flush!` (test namespace); no real rAF timing.
 ## Tooling
 
 - shadow-cljs: `:node-test` build on jsdom; `:browser` build for the TodoMVC example.
-- `bb` script comparing token counts of our TodoMVC and the re-frame reference
-  TodoMVC with the same tokenizer.
-- Versions of shadow-cljs and jsdom, the tokenizer, and the location of the
-  re-frame TodoMVC are verified online during planning, not pinned from memory.
+- `bb tokens`: fetches the re-frame TodoMVC (`day8/re-frame`, `examples/todomvc`,
+  pinned commit `1a1bf1df`), strips comments from both sides, counts tokens with
+  `@anthropic-ai/tokenizer` via a node script. Exits non-zero below 30% saving.
+- `bb loc`: counts non-blank, non-comment lines in `src/cljs_ui`; exits non-zero above 800.
+- Pinned (verified 2026-09-25): shadow-cljs 3.5.3, jsdom 30.1.1,
+  @anthropic-ai/tokenizer 0.0.4; Node 24, Java 21.
