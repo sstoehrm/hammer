@@ -28,7 +28,9 @@
 
 (defn create
   "Instantiates c with positional args. Evaluates every binding once,
-  subscribes paths, watches locals."
+  subscribes paths, watches locals. A binding whose init throws is logged
+  by component name and treated as a nil, unsubscribed value; it does not
+  abort creation of this or any other instance."
   [^Comp c args depth]
   (let [np (.-nprops c)
         specs (.-specs c)
@@ -45,9 +47,19 @@
       (let [i (+ np j)
             {:keys [kind deps f]} (aget specs j)
             cell (Cell. inst i)
-            v (apply f (dep-vals vals deps))]
+            failed? (volatile! false)
+            v (try
+                (apply f (dep-vals vals deps))
+                (catch :default e
+                  (js/console.error "cljs-ui: render failed in" (.-cname c) e)
+                  (vreset! failed? true)
+                  nil))]
         (aset (.-cells inst) i cell)
         (cond
+          @failed?
+          (do (aset kinds i :derived)
+              (aset vals i nil))
+
           (= kind :path)
           (do (aset kinds i :path)
               (aset (.-paths inst) i v)

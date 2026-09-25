@@ -210,3 +210,40 @@
       (finally (set! js/console.error orig)))
     (is (= "<div><i>gone</i><div><span>2</span></div></div>" (.-innerHTML el)))
     (is (= ["cljs-ui: :ref failed"] @logs))))
+
+(defc ok-child [id] [] [:i (str "ok" id)])
+(defc bad-child [id] [x (throw (js/Error. "boom"))] [:b (str "bad" id)])
+(defc two-kids [] [flag [:flag]] [:div {:data-flag (str flag)} [ok-child 1] [bad-child 2]])
+
+(deftest child-binding-init-throw-is-isolated
+  (reset! state/app-db {:flag false})
+  (let [el (container)
+        logs (atom [])
+        orig js/console.error]
+    (set! js/console.error (fn [& a] (swap! logs conj (vec (take 2 a)))))
+    (try
+      (dom/mount! [two-kids] el)
+      (finally (set! js/console.error orig)))
+    (is (= "<div data-flag=\"false\"><i>ok1</i><b>bad2</b></div>" (.-innerHTML el)))
+    (is (= [["cljs-ui: render failed in" "bad-child"]] @logs))
+    (events/dispatch-sync [:set :flag true])
+    (is (= "<div data-flag=\"true\"><i>ok1</i><b>bad2</b></div>" (.-innerHTML el)))))
+
+(defc good-root [] [n [:n]] [:p (str n)])
+(defc bad-root [] [x (throw (js/Error. "root boom"))] [:p (str x)])
+
+(deftest mount-good-bad-good-keeps-refs-consistent
+  (reset! state/app-db {:n 1})
+  (let [el (container)
+        logs (atom [])
+        orig js/console.error]
+    (dom/mount! [good-root] el)
+    (let [after-good (.-refs state/paths)]
+      (set! js/console.error (fn [& a] (swap! logs conj (first a))))
+      (try
+        (dom/mount! [bad-root] el)
+        (dom/mount! [good-root] el)
+        (finally (set! js/console.error orig)))
+      (is (= after-good (.-refs state/paths)))
+      (is (= "<p>1</p>" (.-innerHTML el)))
+      (is (pos? (count @logs))))))

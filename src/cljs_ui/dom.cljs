@@ -278,7 +278,9 @@
 (defn mount!
   "Renders hiccup into container el, replacing what an earlier mount! put there."
   [hiccup el]
-  (when-let [old (get @roots el)] (unmount! old))
+  (when-let [old (get @roots el)]
+    (unmount! old)
+    (swap! roots dissoc el))
   (set! (.-textContent ^js el) "")
   (let [v (normalize hiccup)]
     (.appendChild ^js el (create! v 0))
