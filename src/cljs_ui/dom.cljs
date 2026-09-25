@@ -219,21 +219,26 @@
         (recur (inc i))))))
 
 (defn- patch-keyed! [^js el ^js old ^js nu depth]
-  (let [olds (volatile! (reduce (fn [m ^VNode o] (assoc m (.-key o) o)) {} old))]
+  (let [new-keys (into #{} (map (fn [^VNode n] (.-key n))) nu)
+        remaining (volatile!
+                   (reduce (fn [m ^VNode o]
+                             (if (contains? new-keys (.-key o))
+                               (assoc m (.-key o) o)
+                               (do (.removeChild el (node-of o))
+                                   (unmount! o)
+                                   m)))
+                           {} old))]
     (dotimes [i (alength nu)]
       (let [n (aget nu i)
-            o (get @olds (.-key ^VNode n))
+            o (get @remaining (.-key ^VNode n))
             node (if o
-                   (do (vswap! olds dissoc (.-key ^VNode n))
+                   (do (vswap! remaining dissoc (.-key ^VNode n))
                        (patch! o n depth)
                        (node-of n))
                    (create! n depth))
             at (.item (.-childNodes el) i)]
         (when-not (identical? node at)
-          (.insertBefore el node at))))
-    (doseq [o (vals @olds)]
-      (.removeChild el (node-of o))
-      (unmount! o))))
+          (.insertBefore el node at))))))
 
 (defn- patch-kids! [^js el old nu depth]
   (if (and (keyed? old) (keyed? nu))

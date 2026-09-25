@@ -146,3 +146,44 @@
       (finally (set! js/console.warn orig)))
     (is (= "<ul><li>2</li></ul>" (.-innerHTML el)))
     (is (pos? @warns))))
+
+(defc idlist [] [ids [:ids]] [:ul (for [id ids] ^{:key id} [:li [:input {:id (str "in" id)}]])])
+
+(deftest keyed-removal-preserves-focus-in-remaining-rows
+  (reset! state/app-db {:ids [1 2 3]})
+  (let [el (container)]
+    (dom/mount! [idlist] el)
+    (let [lis (kids (.-firstChild el))
+          li2 (nth lis 1)
+          li3 (nth lis 2)
+          in3 (.-firstChild li3)]
+      (.focus in3)
+      (events/dispatch-sync [:set :ids [2 3]])
+      (is (identical? in3 (.-activeElement js/document)))
+      (let [lis2 (kids (.-firstChild el))]
+        (is (identical? li2 (first lis2)))
+        (is (identical? li3 (second lis2)))))))
+
+(events/reg-event :toggle-and-bump (fn [db] {:db (-> db (update :on not) (update :n inc))}))
+
+(defc thrower [] [on [:on]]
+  (if on
+    [:span {:ref (fn [el] (when (nil? el) (throw (js/Error. "boom"))))}]
+    [:i "gone"]))
+
+(defc leaf [] [n [:n]] [:span (str n)])
+(defc wrapper [] [] [:div [leaf]])
+(defc root2 [] [] [:div [thrower] [wrapper]])
+
+(deftest flush-isolates-instance-errors
+  (reset! state/app-db {:on true :n 1})
+  (let [el (container)
+        logs (atom [])
+        orig js/console.error]
+    (dom/mount! [root2] el)
+    (set! js/console.error (fn [& a] (swap! logs conj (first a))))
+    (try
+      (events/dispatch-sync [:toggle-and-bump])
+      (finally (set! js/console.error orig)))
+    (is (= "<div><i>gone</i><div><span>2</span></div></div>" (.-innerHTML el)))
+    (is (= ["cljs-ui: update failed"] @logs))))

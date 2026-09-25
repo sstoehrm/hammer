@@ -16,12 +16,18 @@
 (defn pending? [] (pos? (.-length dirty)))
 
 (defn flush!
-  "Runs the instances queued so far, lowest depth first."
+  "Runs the instances queued so far, lowest depth first. An instance whose run
+  throws is logged and skipped; the rest of the batch still runs."
   []
   (set! (.-pending st) false)
   (let [xs (.sort (.splice dirty 0) (fn [^js a ^js b] (- (.-depth a) (.-depth b))))]
     (when-let [run (.-run st)]
-      (.forEach xs (fn [^js x] (when (.-dirty x) (run x)))))))
+      (.forEach xs (fn [^js x]
+                     (when (.-dirty x)
+                       (try
+                         (run x)
+                         (catch :default e
+                           (js/console.error "cljs-ui: update failed" e)))))))))
 
 (defn schedule! [^js inst]
   (when-not (.-dirty inst)
