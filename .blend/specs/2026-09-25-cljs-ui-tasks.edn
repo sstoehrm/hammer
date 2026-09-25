@@ -17,7 +17,7 @@
        :files "core.cljs, criteria_test.cljs"}
   :t8 {:name "8. TodoMVC example" :state :done
        :files "examples/todomvc"}
-  :t9 {:name "9. Measurements and README" :state :in-progress
+  :t9 {:name "9. Measurements and README" :state :done
        :files "bb.edn, scripts/count-tokens.cjs, README.md"}}
 
  :edges
