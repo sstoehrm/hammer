@@ -11,9 +11,9 @@
        :files "events.cljs, testing.cljs"}
   :t5 {:name "5. DOM mount" :state :done
        :files "dom.cljs (normalize, attrs, create, mount!)"}
-  :t6 {:name "6. DOM updates" :state :in-progress
+  :t6 {:name "6. DOM updates" :state :done
        :files "dom.cljs (patch, keyed diff, runner)"}
-  :t7 {:name "7. Public API + 1000-row criterion" :state :new
+  :t7 {:name "7. Public API + 1000-row criterion" :state :in-progress
        :files "core.cljs, criteria_test.cljs"}
   :t8 {:name "8. TodoMVC example" :state :new
        :files "examples/todomvc"}
