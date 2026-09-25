@@ -1,0 +1,92 @@
+;; Core flow: events (re-frame style) -> app-db -> path trie -> component bindings -> keyed hiccup diff
+{:nodes
+ {;; --- events ---
+  :dom-event   {:name "DOM event" :type "trigger"
+                :desc "hiccup attr: vector = (dispatch v), fn = plain handler; :ref fn gets el on mount, nil on unmount"}
+  :dispatch    {:name "dispatch" :type "api" :unit "events"
+                :sig "(dispatch [:todo/add \"milk\"]) / (dispatch-sync ..)"}
+  :queue       {:name "event queue" :type "runtime" :unit "events"
+                :desc "FIFO"}
+  :reg-event   {:name "reg-event handler" :type "api" :unit "events"
+                :sig "(reg-event :todo/add (fn [db text] {:db .. :dispatch [..] :http {..}}))"
+                :desc "input: [db & args] only (no coeffects). output: effect map. pure."}
+  :fx-runner   {:name "fx runner" :type "runtime" :unit "events"
+                :desc "applies :db first (and calls trie directly, no add-watch), then :dispatch, then registered fx"}
+  :reg-fx      {:name "reg-fx effects" :type "api" :unit "events"
+                :sig "(reg-fx :http (fn [opts] ..))"
+                :desc "side effects: http, storage, timers, focus"}
+
+  ;; --- state ---
+  :app-db      {:name "app-db" :type "state"
+                :desc "single atom, persistent map; written only by fx runner"}
+
+  ;; --- runtime ---
+  :trie        {:name "path trie" :type "runtime" :unit "trie"
+                :desc "every subscribed path registered once, shared by all instances; walk old/new db with identical? per level, prune unchanged branches; notify subscribers of changed leaves"}
+  :scheduler   {:name "scheduler" :type "runtime" :unit "scheduler"
+                :desc "collects dirty instances, flushes once per rAF, sorted by depth (parents first)"}
+
+  ;; --- component ---
+  :defc        {:name "defc" :type "api" :unit "core"
+                :sig "(defc todo-item [id done?] [todos [:todos] draft (atom \"\") visible (filter-todos todos filt)] [:hiccup ..])"
+                :desc "thin macro, runtime only; one bindings vector; binding kind decided by form"}
+  :path-b      {:name "path binding" :type "binding" :unit "cells"
+                :form "vector literal, e.g. [:todos] or [:todos id]"
+                :desc "subscribes to trie; re-resolved when a prop it uses changes"}
+  :local-b     {:name "local binding" :type "binding" :unit "cells"
+                :form "derefable, e.g. (atom \"\")"
+                :desc "created once per instance; add-watch -> dirty"}
+  :derived-b   {:name "derived binding" :type "binding" :unit "cells"
+                :form "any other expression"
+                :desc "macro finds earlier binding symbols in the expression -> cached fn of exactly those; re-run only when one changed"}
+  :changed?    {:name "changed?" :type "runtime" :unit "cells"
+                :desc "identical? then = against previous value"}
+  :render      {:name "render" :type "runtime" :unit "dom"
+                :desc "call body -> hiccup"}
+  :diff        {:name "keyed hiccup diff" :type "runtime" :unit "dom"
+                :desc "new vs previous hiccup of this instance only; patches DOM nodes that differ"}
+  :child       {:name "child defc" :type "boundary" :unit "dom"
+                :desc "called positionally [todo-item id done?]; diff stops here; re-rendered only if an arg is not identical? or own bindings changed"}
+  :dom         {:name "DOM" :type "platform"}}
+
+ :edges
+ {[:dom-event :dispatch]  {:direction :-> :name "event vector"}
+  [:dispatch :queue]      {:direction :-> :name "enqueue"}
+  [:queue :reg-event]     {:direction :-> :name "db + args"}
+  [:reg-event :fx-runner] {:direction :-> :name "{:db :dispatch :fx}"}
+  [:fx-runner :app-db]    {:direction :-> :name ":db reset!"}
+  [:fx-runner :trie]      {:direction :-> :name "old + new db"}
+  [:fx-runner :queue]     {:direction :-> :name ":dispatch"}
+  [:fx-runner :reg-fx]    {:direction :-> :name "other fx"}
+  [:reg-fx :dispatch]     {:direction :-> :name "async result"}
+
+  [:trie :path-b]         {:direction :-> :name "changed leaf"}
+  [:path-b :derived-b]    {:direction :-> :name "dep changed"}
+  [:local-b :derived-b]   {:direction :-> :name "dep changed"}
+  [:path-b :changed?]     {:direction :->}
+  [:derived-b :changed?]  {:direction :->}
+  [:local-b :changed?]    {:direction :-> :name "watch"}
+  [:changed? :scheduler]  {:direction :-> :name "mark dirty"}
+  [:scheduler :render]    {:direction :-> :name "flush (rAF), parents first"}
+  [:render :diff]         {:direction :-> :name "hiccup"}
+  [:diff :dom]            {:direction :-> :name "patch"}
+  [:diff :child]          {:direction :-> :name "props (skip if identical?)"}
+  [:dom :dom-event]       {:direction :->}
+
+  [:defc :path-b]         {:direction :-> :name "declares"}
+  [:defc :local-b]        {:direction :-> :name "creates at mount"}
+  [:defc :derived-b]      {:direction :-> :name "declares"}}
+
+ :boxes
+ {:events    {:name "Events (re-frame)" :type "layer"
+              :components #{:dispatch :queue :reg-event :fx-runner :reg-fx}}
+  :state     {:name "State" :type "layer"
+              :components #{:app-db}}
+  :runtime   {:name "Reactive runtime" :type "layer"
+              :components #{:trie :scheduler}}
+  :bindings  {:name "Bindings vector" :type "layer"
+              :components #{:path-b :local-b :derived-b}}
+  :component {:name "Component instance" :type "layer"
+              :components #{:defc :bindings :changed? :render :diff :child}}
+  :browser   {:name "Browser" :type "layer"
+              :components #{:dom :dom-event}}}}
