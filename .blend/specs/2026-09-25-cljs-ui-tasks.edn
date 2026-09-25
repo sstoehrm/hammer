@@ -7,9 +7,9 @@
        :files "state.cljs, scheduler.cljs, cells.cljs"}
   :t3 {:name "3. defc macro" :state :done
        :files "core.clj, core.cljs (shell)"}
-  :t4 {:name "4. Events and test helpers" :state :in-progress
+  :t4 {:name "4. Events and test helpers" :state :done
        :files "events.cljs, testing.cljs"}
-  :t5 {:name "5. DOM mount" :state :new
+  :t5 {:name "5. DOM mount" :state :in-progress
        :files "dom.cljs (normalize, attrs, create, mount!)"}
   :t6 {:name "6. DOM updates" :state :new
        :files "dom.cljs (patch, keyed diff, runner)"}
