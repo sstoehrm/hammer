@@ -1,6 +1,8 @@
 (ns cljs-ui.trie
   "Path subscriptions. A node holds the cells subscribed to exactly its path
-  and counts every registration at or below it.")
+  and counts every registration at or below it.
+  Cells are removed by identity: pass the same object to unregister! that
+  register! got.")
 
 (deftype Node [^:mutable children cells ^:mutable refs])
 
@@ -8,7 +10,7 @@
 
 (defn register!
   "Subscribes cell to path below node n."
-  [n path cell]
+  [^Node n path cell]
   (set! (.-refs n) (inc (.-refs n)))
   (if-let [ks (seq path)]
     (let [k (first ks)
@@ -21,11 +23,11 @@
 
 (defn unregister!
   "Removes cell from path below node n; drops nodes nobody subscribes to."
-  [n path cell]
+  [^Node n path cell]
   (set! (.-refs n) (dec (.-refs n)))
   (if-let [ks (seq path)]
     (let [k (first ks)
-          c (get (.-children n) k)]
+          ^Node c (get (.-children n) k)]
       (unregister! c (rest ks) cell)
       (when (zero? (.-refs c))
         (set! (.-children n) (dissoc (.-children n) k))))
