@@ -34,12 +34,14 @@
       (is (= [7] @seen)))))
 
 (deftest unregister-drops-empty-nodes
-  (let [root (trie/node)]
-    (trie/register! root [:a :x] :c1)
-    (trie/register! root [:a :x] :c2)
-    (trie/unregister! root [:a :x] :c1)
-    (is (= [:c2] (marks root {:a {:x 1}} {:a {:x 2}})))
-    (trie/unregister! root [:a :x] :c2)
+  (let [root (trie/node)
+        c1 :c1
+        c2 :c2]
+    (trie/register! root [:a :x] c1)
+    (trie/register! root [:a :x] c2)
+    (trie/unregister! root [:a :x] c1)
+    (is (= [c2] (marks root {:a {:x 1}} {:a {:x 2}})))
+    (trie/unregister! root [:a :x] c2)
     (is (= 0 (.-refs root)))
     (is (empty? (.-children root)))))
 
