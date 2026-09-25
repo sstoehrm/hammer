@@ -40,6 +40,14 @@
       (is (= "" (.getAttribute i "hidden")))
       (is (= "red" (.. i -style -color))))))
 
+(deftest select-initial-value-applies-after-options-exist
+  (let [el (container)]
+    (dom/mount! [:select {:value "b"}
+                 [:option {:value "a"} "A"]
+                 [:option {:value "b"} "B"]]
+                el)
+    (is (= "b" (.-value (.-firstChild el))))))
+
 (deftest event-vectors-dispatch-and-fns-run
   (let [el (container)
         got (atom nil)]

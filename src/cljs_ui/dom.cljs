@@ -112,10 +112,19 @@
 
 (defonce ^:private ref-queue #js [])
 
+(defn- safe-ref!
+  "Calls a user :ref fn, logging and swallowing any throw so one bad ref
+  neither aborts an unmount/patch nor drops other queued refs."
+  [f el]
+  (try
+    (f el)
+    (catch :default e
+      (js/console.error "cljs-ui: :ref failed" e))))
+
 (defn- run-refs!
   "Calls :ref fns queued by create! once their elements are in the document."
   []
-  (.forEach (.splice ref-queue 0) (fn [[f el]] (f el))))
+  (.forEach (.splice ref-queue 0) (fn [[f el]] (safe-ref! f el))))
 
 (defn- node-of [^VNode v]
   (if (keyword-identical? (.-t v) :comp)
@@ -133,8 +142,8 @@
             n)
     :el (let [el (.createElement js/document (.-tag v))
               attrs (.-attrs v)]
-          (set-attrs! el nil attrs)
           (.forEach (.-kids v) (fn [k] (.appendChild el (create! k depth))))
+          (set-attrs! el nil attrs)
           (when-let [r (:ref attrs)] (.push ref-queue #js [r el]))
           (set! (.-el v) el)
           el)
@@ -162,7 +171,7 @@
   (case (.-t v)
     :text nil
     :el (do (.forEach (.-kids v) (fn [k] (unmount! k)))
-            (when-let [r (:ref (.-attrs v))] (r nil)))
+            (when-let [r (:ref (.-attrs v))] (safe-ref! r nil)))
     :comp (let [inst (.-inst v)]
             (unmount! (.-vnode ^cells/Instance inst))
             (cells/destroy! inst))))
@@ -284,4 +293,11 @@
     (set! (.-textContent ^js el) ""))
   (reset! roots {}))
 
-(sched/set-runner! (fn [inst] (update-inst! inst) (run-refs!)))
+(sched/set-runner!
+ (fn [^cells/Instance inst]
+   (try
+     (update-inst! inst)
+     (catch :default e
+       (js/console.error "cljs-ui: update failed in" (.-cname ^cells/Comp (.-comp inst)) e))
+     (finally
+       (run-refs!)))))

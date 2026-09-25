@@ -112,11 +112,11 @@
         logs (atom [])
         orig js/console.error]
     (dom/mount! [fragile] el)
-    (set! js/console.error (fn [& a] (swap! logs conj (first a))))
+    (set! js/console.error (fn [& a] (swap! logs conj (vec (take 2 a)))))
     (try (events/dispatch-sync [:set :n 2])
          (finally (set! js/console.error orig)))
     (is (= "<p>1</p>" (.-innerHTML el)))
-    (is (= ["cljs-ui: render failed in"] @logs))
+    (is (= [["cljs-ui: render failed in" "fragile"]] @logs))
     (events/dispatch-sync [:set :n 3])
     (is (= "<p>3</p>" (.-innerHTML el)))))
 
@@ -164,6 +164,29 @@
         (is (identical? li2 (first lis2)))
         (is (identical? li3 (second lis2)))))))
 
+(defc reffed [id] [todo [:todos id]]
+  [:li {:ref #(.focus %)} (:title todo)])
+(defc reffed-list [] [ids [:ids]] [:ul (for [id ids] ^{:key id} [reffed id])])
+
+(deftest ref-throw-during-unmount-does-not-abort-keyed-removal
+  (reset! state/app-db {:ids [1 2 3]
+                        :todos {1 {:title "a"} 2 {:title "b"} 3 {:title "c"}}})
+  (let [el (container)
+        before (.-refs state/paths)
+        logs (atom [])
+        orig js/console.error]
+    (dom/mount! [reffed-list] el)
+    (let [after-mount (.-refs state/paths)]
+      (set! js/console.error (fn [& a] (swap! logs conj (first a))))
+      (try
+        (events/dispatch-sync [:set :ids [3]])
+        (is (= "<ul><li>c</li></ul>" (.-innerHTML el)))
+        (is (= (- after-mount 2) (.-refs state/paths)))
+        (is (= ["cljs-ui: :ref failed" "cljs-ui: :ref failed"] @logs))
+        (t/reset-app!)
+        (finally (set! js/console.error orig)))
+      (is (= before (.-refs state/paths))))))
+
 (events/reg-event :toggle-and-bump (fn [db] {:db (-> db (update :on not) (update :n inc))}))
 
 (defc thrower [] [on [:on]]
@@ -186,4 +209,4 @@
       (events/dispatch-sync [:toggle-and-bump])
       (finally (set! js/console.error orig)))
     (is (= "<div><i>gone</i><div><span>2</span></div></div>" (.-innerHTML el)))
-    (is (= ["cljs-ui: update failed"] @logs))))
+    (is (= ["cljs-ui: :ref failed"] @logs))))
