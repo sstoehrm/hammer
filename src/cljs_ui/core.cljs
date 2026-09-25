@@ -11,7 +11,7 @@
 (def dispatch-sync events/dispatch-sync)
 
 (defn mount!
-  "Sets app-db to db and renders hiccup into el."
-  [hiccup el db]
-  (events/set-db! db)
-  (dom/mount! hiccup el))
+  "Renders hiccup into el. With db, replaces app-db first; the 2-arity form
+  keeps the current db, e.g. in a ^:dev/after-load hook for hot reload."
+  ([hiccup el] (dom/mount! hiccup el))
+  ([hiccup el db] (events/set-db! db) (dom/mount! hiccup el)))

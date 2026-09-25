@@ -12,6 +12,16 @@
 (defc table [] [ids [:ids]]
   [:ul (for [id ids] ^{:key id} [row id])])
 
+(defc val-view [] [v [:v]] [:p v])
+
+(deftest two-arity-mount-keeps-current-db
+  (let [el (.createElement js/document "div")]
+    (mount! [val-view] el {:v "first"})
+    (reg-event :test/set-v (fn [db v] {:db (assoc db :v v)}))
+    (dispatch-sync [:test/set-v "second"])
+    (mount! [val-view] el)
+    (is (= "<p>second</p>" (.-innerHTML el)))))
+
 (deftest toggling-one-of-1000-renders-one
   (let [el (.createElement js/document "div")
         ids (vec (range 1000))]
