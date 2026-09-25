@@ -1,10 +1,10 @@
-(ns cljs-ui.cells-test
+(ns hammer.cells-test
   (:require [cljs.test :refer [deftest is]]
-            [cljs-ui.test-env]
-            [cljs-ui.state :as state]
-            [cljs-ui.trie :as trie]
-            [cljs-ui.cells :as cells]
-            [cljs-ui.scheduler :as sched]))
+            [hammer.test-env]
+            [hammer.state :as state]
+            [hammer.trie :as trie]
+            [hammer.cells :as cells]
+            [hammer.scheduler :as sched]))
 
 (defn- set-db! [db]
   (let [old @state/app-db]

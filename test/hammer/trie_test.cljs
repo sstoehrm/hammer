@@ -1,6 +1,6 @@
-(ns cljs-ui.trie-test
+(ns hammer.trie-test
   (:require [cljs.test :refer [deftest is]]
-            [cljs-ui.trie :as trie]))
+            [hammer.trie :as trie]))
 
 (defn- marks [root old nu]
   (let [seen (atom [])]

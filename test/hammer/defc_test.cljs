@@ -1,10 +1,10 @@
-(ns cljs-ui.defc-test
+(ns hammer.defc-test
   (:require [cljs.test :refer [deftest is]]
-            [cljs-ui.test-env]
-            [cljs-ui.state :as state]
-            [cljs-ui.cells :as cells]
-            [cljs-ui.core :refer [defc]])
-  (:require-macros [cljs-ui.macro-probe :refer [expand-error]]))
+            [hammer.test-env]
+            [hammer.state :as state]
+            [hammer.cells :as cells]
+            [hammer.core :refer [defc]])
+  (:require-macros [hammer.macro-probe :refer [expand-error]]))
 
 (defc row [id]
   [todo  [:todos id]
@@ -35,9 +35,9 @@
 
 (deftest defc-rejects-bad-names-at-compile-time
   (is (= "defc: bindings need an even number of forms"
-         (expand-error (cljs-ui.core/defc bad [] [a] nil))))
+         (expand-error (hammer.core/defc bad [] [a] nil))))
   (is (= "defc: props and binding names must be plain symbols"
-         (expand-error (cljs-ui.core/defc bad [{:keys [x]}] [] nil))))
+         (expand-error (hammer.core/defc bad [{:keys [x]}] [] nil))))
   (is (= "defc: duplicate prop or binding name"
-         (expand-error (cljs-ui.core/defc bad [a] [a 1] nil))))
-  (is (nil? (expand-error (cljs-ui.core/defc ok [a] [b 1] nil)))))
+         (expand-error (hammer.core/defc bad [a] [a 1] nil))))
+  (is (nil? (expand-error (hammer.core/defc ok [a] [b 1] nil)))))

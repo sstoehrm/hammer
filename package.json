@@ -1,5 +1,5 @@
 {
-  "name": "cljs-ui",
+  "name": "hammer",
   "private": true,
   "scripts": {
     "test": "shadow-cljs compile test && node target/test.js"

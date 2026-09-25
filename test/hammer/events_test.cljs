@@ -1,9 +1,9 @@
-(ns cljs-ui.events-test
+(ns hammer.events-test
   (:require [cljs.test :refer [deftest is async]]
-            [cljs-ui.test-env]
-            [cljs-ui.state :as state]
-            [cljs-ui.events :as ev]
-            [cljs-ui.testing :as t]))
+            [hammer.test-env]
+            [hammer.state :as state]
+            [hammer.events :as ev]
+            [hammer.testing :as t]))
 
 (defn- capture-errors [f]
   (let [orig js/console.error
@@ -49,9 +49,9 @@
                                   (ev/dispatch-sync [:missing])
                                   (ev/dispatch-sync [:bad-fx])))]
     (is (= {:n 0} @state/app-db))
-    (is (= ["cljs-ui: event handler failed"
-            "cljs-ui: no event handler for"
-            "cljs-ui: no fx registered for"]
+    (is (= ["hammer: event handler failed"
+            "hammer: no event handler for"
+            "hammer: no fx registered for"]
            (mapv first logs)))))
 
 (deftest dispatch-sync-inside-handler-fails
@@ -67,6 +67,6 @@
   (ev/reg-event :db-only (fn [db] db))
   (let [logs (capture-errors #(do (ev/dispatch-sync :oops)
                                   (ev/dispatch-sync [:db-only])))]
-    (is (= "cljs-ui: event must be a vector, got" (first (first logs))))
+    (is (= "hammer: event must be a vector, got" (first (first logs))))
     (is (re-find #"\{:db db\}" (last (second logs))))
     (is (= {:n 0} @state/app-db))))

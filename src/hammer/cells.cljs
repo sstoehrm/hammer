@@ -1,9 +1,9 @@
-(ns cljs-ui.cells
+(ns hammer.cells
   "Per-instance binding cells: props, path, local and derived slots.
   Marking is eager; recomputation is lazy (refresh!)."
-  (:require [cljs-ui.state :as state]
-            [cljs-ui.trie :as trie]
-            [cljs-ui.scheduler :as sched]))
+  (:require [hammer.state :as state]
+            [hammer.trie :as trie]
+            [hammer.scheduler :as sched]))
 
 (deftype Comp [cname nprops specs body ^:mutable renders])
 (deftype Cell [inst i])
@@ -51,7 +51,7 @@
             v (try
                 (apply f (dep-vals vals deps))
                 (catch :default e
-                  (js/console.error "cljs-ui: render failed in" (.-cname c) e)
+                  (js/console.error "hammer: render failed in" (.-cname c) e)
                   (vreset! failed? true)
                   nil))]
         (aset (.-cells inst) i cell)

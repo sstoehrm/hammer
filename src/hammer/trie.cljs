@@ -1,4 +1,4 @@
-(ns cljs-ui.trie
+(ns hammer.trie
   "Path subscriptions. A node holds the cells subscribed to exactly its path
   and counts every registration at or below it.
   Cells are removed by identity: pass the same object to unregister! that

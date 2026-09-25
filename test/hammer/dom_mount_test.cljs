@@ -1,11 +1,11 @@
-(ns cljs-ui.dom-mount-test
+(ns hammer.dom-mount-test
   (:require [cljs.test :refer [deftest is use-fixtures]]
-            [cljs-ui.test-env]
-            [cljs-ui.state :as state]
-            [cljs-ui.events :as events]
-            [cljs-ui.dom :as dom]
-            [cljs-ui.testing :as t]
-            [cljs-ui.core :refer [defc]]))
+            [hammer.test-env]
+            [hammer.state :as state]
+            [hammer.events :as events]
+            [hammer.dom :as dom]
+            [hammer.testing :as t]
+            [hammer.core :refer [defc]]))
 
 (use-fixtures :each {:before t/reset-app!})
 

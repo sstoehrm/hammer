@@ -1,4 +1,4 @@
-(ns cljs-ui.macro-probe)
+(ns hammer.macro-probe)
 
 (defmacro expand-error
   "Macroexpands form at compile time; returns the root-cause message of the

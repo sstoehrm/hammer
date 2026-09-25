@@ -1,11 +1,11 @@
-(ns cljs-ui.dom-update-test
+(ns hammer.dom-update-test
   (:require [cljs.test :refer [deftest is use-fixtures]]
-            [cljs-ui.test-env]
-            [cljs-ui.state :as state]
-            [cljs-ui.events :as events]
-            [cljs-ui.dom :as dom]
-            [cljs-ui.testing :as t]
-            [cljs-ui.core :refer [defc]]))
+            [hammer.test-env]
+            [hammer.state :as state]
+            [hammer.events :as events]
+            [hammer.dom :as dom]
+            [hammer.testing :as t]
+            [hammer.core :refer [defc]]))
 
 (use-fixtures :each {:before t/reset-app!})
 
@@ -116,7 +116,7 @@
     (try (events/dispatch-sync [:set :n 2])
          (finally (set! js/console.error orig)))
     (is (= "<p>1</p>" (.-innerHTML el)))
-    (is (= [["cljs-ui: render failed in" "fragile"]] @logs))
+    (is (= [["hammer: render failed in" "fragile"]] @logs))
     (events/dispatch-sync [:set :n 3])
     (is (= "<p>3</p>" (.-innerHTML el)))))
 
@@ -182,7 +182,7 @@
         (events/dispatch-sync [:set :ids [3]])
         (is (= "<ul><li>c</li></ul>" (.-innerHTML el)))
         (is (= (- after-mount 2) (.-refs state/paths)))
-        (is (= ["cljs-ui: :ref failed" "cljs-ui: :ref failed"] @logs))
+        (is (= ["hammer: :ref failed" "hammer: :ref failed"] @logs))
         (t/reset-app!)
         (finally (set! js/console.error orig)))
       (is (= before (.-refs state/paths))))))
@@ -209,7 +209,7 @@
       (events/dispatch-sync [:toggle-and-bump])
       (finally (set! js/console.error orig)))
     (is (= "<div><i>gone</i><div><span>2</span></div></div>" (.-innerHTML el)))
-    (is (= ["cljs-ui: :ref failed"] @logs))))
+    (is (= ["hammer: :ref failed"] @logs))))
 
 (defc ok-child [id] [] [:i (str "ok" id)])
 (defc bad-child [id] [x (throw (js/Error. "boom"))] [:b (str "bad" id)])
@@ -225,7 +225,7 @@
       (dom/mount! [two-kids] el)
       (finally (set! js/console.error orig)))
     (is (= "<div data-flag=\"false\"><i>ok1</i><b>bad2</b></div>" (.-innerHTML el)))
-    (is (= [["cljs-ui: render failed in" "bad-child"]] @logs))
+    (is (= [["hammer: render failed in" "bad-child"]] @logs))
     (events/dispatch-sync [:set :flag true])
     (is (= "<div data-flag=\"true\"><i>ok1</i><b>bad2</b></div>" (.-innerHTML el)))))
 

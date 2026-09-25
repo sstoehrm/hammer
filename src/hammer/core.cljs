@@ -1,9 +1,9 @@
-(ns cljs-ui.core
+(ns hammer.core
   "Public API: reg-event, reg-fx, dispatch, dispatch-sync, defc, mount!."
-  (:require-macros [cljs-ui.core])
-  (:require [cljs-ui.cells]
-            [cljs-ui.dom :as dom]
-            [cljs-ui.events :as events]))
+  (:require-macros [hammer.core])
+  (:require [hammer.cells]
+            [hammer.dom :as dom]
+            [hammer.events :as events]))
 
 (def reg-event events/reg-event)
 (def reg-fx events/reg-fx)

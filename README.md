@@ -1,11 +1,11 @@
-# cljs-ui
+# hammer
 
 re-frame's events, without React or subscriptions. Components declare the db
 paths they read; a path trie marks exactly the components whose paths changed,
 and each re-renders by diffing only its own hiccup.
 
 ```clojure
-(require '[cljs-ui.core :refer [defc reg-event reg-fx dispatch dispatch-sync mount!]])
+(require '[hammer.core :refer [defc reg-event reg-fx dispatch dispatch-sync mount!]])
 
 (reg-event :toggle (fn [db id] {:db (update-in db [:todos id :done] not)}))
 
@@ -43,7 +43,7 @@ running app already has, instead of resetting it.
 
 ## Testing
 
-`cljs-ui.testing` provides:
+`hammer.testing` provides:
 
 - `(flush!)` — drains queued events, then renders until nothing is dirty
   (synchronous equivalent of the microtask + animation-frame pipeline).

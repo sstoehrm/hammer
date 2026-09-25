@@ -1,11 +1,11 @@
-(ns cljs-ui.dom
+(ns hammer.dom
   "Hiccup → DOM. Each instance keeps its last normalized hiccup (vnode) and is
   diffed only against itself; child components are boundaries."
   (:require [clojure.string :as str]
             [goog.object :as gobj]
-            [cljs-ui.cells :as cells]
-            [cljs-ui.events :as events]
-            [cljs-ui.scheduler :as sched]))
+            [hammer.cells :as cells]
+            [hammer.events :as events]
+            [hammer.scheduler :as sched]))
 
 (deftype VNode [t tag text attrs kids key comp args ^:mutable el ^:mutable inst])
 
@@ -119,7 +119,7 @@
   (try
     (f el)
     (catch :default e
-      (js/console.error "cljs-ui: :ref failed" e))))
+      (js/console.error "hammer: :ref failed" e))))
 
 (defn- run-refs!
   "Calls :ref fns queued by create! once their elements are in the document."
@@ -157,7 +157,7 @@
   (try
     (normalize (cells/render inst))
     (catch :default e
-      (js/console.error "cljs-ui: render failed in" (.-cname ^cells/Comp (.-comp inst)) e)
+      (js/console.error "hammer: render failed in" (.-cname ^cells/Comp (.-comp inst)) e)
       nil)))
 
 (defn- mount-inst! [^cells/Instance inst]
@@ -198,7 +198,7 @@
   (when (.-mounted inst)
     (when (try (cells/refresh! inst)
                (catch :default e
-                 (js/console.error "cljs-ui: render failed in" (.-cname ^cells/Comp (.-comp inst)) e)
+                 (js/console.error "hammer: render failed in" (.-cname ^cells/Comp (.-comp inst)) e)
                  false))
       (when-let [v (body-vnode inst)]
         (let [old (.-vnode inst)]
@@ -209,7 +209,7 @@
   (and (pos? (alength kids))
        (.every kids (fn [^VNode k] (some? (.-key k))))
        (or (= (alength kids) (count (into #{} (map (fn [^VNode k] (.-key k))) kids)))
-           (do (js/console.warn "cljs-ui: duplicate keys, falling back to index diff")
+           (do (js/console.warn "hammer: duplicate keys, falling back to index diff")
                false))))
 
 (defn- patch-indexed! [^js el ^js old ^js nu depth]
@@ -300,6 +300,6 @@
    (try
      (update-inst! inst)
      (catch :default e
-       (js/console.error "cljs-ui: update failed in" (.-cname ^cells/Comp (.-comp inst)) e))
+       (js/console.error "hammer: update failed in" (.-cname ^cells/Comp (.-comp inst)) e))
      (finally
        (run-refs!)))))

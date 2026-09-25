@@ -1,4 +1,4 @@
-(ns cljs-ui.core)
+(ns hammer.core)
 
 (defn- symbols [form]
   (set (filter symbol? (tree-seq coll? seq form))))
@@ -27,7 +27,7 @@
     (when-not (= (count slots) (count (set slots)))
       (throw (ex-info "defc: duplicate prop or binding name" {:name cname :slots slots})))
     `(def ~cname
-       (cljs-ui.cells/component
+       (hammer.cells/component
         ~(str cname)
         ~(count props)
         ~(vec (map-indexed (fn [j pair]

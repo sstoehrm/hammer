@@ -1,9 +1,9 @@
 (ns todomvc.core-test
   (:require [cljs.test :refer [deftest is]]
             [cljs.reader :refer [read-string]]
-            [cljs-ui.test-env]
-            [cljs-ui.testing :as t]
-            [cljs-ui.core :refer [dispatch]]
+            [hammer.test-env]
+            [hammer.testing :as t]
+            [hammer.core :refer [dispatch]]
             [todomvc.core :as app]))
 
 (defn- q [s] (.querySelector js/document s))
@@ -53,7 +53,7 @@
     (.click (first (qa ".toggle")))
     (t/flush!)
     (is (= "1 item left" (.-textContent (q ".todo-count"))))
-    (is (true? (get-in (read-string (.getItem js/localStorage "todos-cljs-ui")) [1 :done])))
+    (is (true? (get-in (read-string (.getItem js/localStorage "todos-hammer")) [1 :done])))
 
     (.dispatchEvent (second (qa ".todo-list label"))
                     (new (.-MouseEvent js/window) "dblclick" #js {:bubbles true}))

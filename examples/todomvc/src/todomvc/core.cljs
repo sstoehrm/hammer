@@ -1,9 +1,9 @@
 (ns todomvc.core
   (:require [clojure.string :as str]
             [cljs.reader :refer [read-string]]
-            [cljs-ui.core :refer [defc reg-event reg-fx dispatch mount!]]))
+            [hammer.core :refer [defc reg-event reg-fx dispatch mount!]]))
 
-(def store-key "todos-cljs-ui")
+(def store-key "todos-hammer")
 
 (reg-fx :store #(.setItem js/localStorage store-key (pr-str %)))
 

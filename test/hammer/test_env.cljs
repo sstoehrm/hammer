@@ -1,4 +1,4 @@
-(ns cljs-ui.test-env
+(ns hammer.test-env
   "Required first by every test namespace that needs browser globals."
   (:require ["jsdom" :refer [JSDOM]]))
 

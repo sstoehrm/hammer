@@ -1,4 +1,4 @@
-(ns cljs-ui.scheduler
+(ns hammer.scheduler
   "Dirty instances, flushed once per animation frame, parents first.")
 
 (deftype State [^:mutable pending ^:mutable run])
@@ -27,7 +27,7 @@
                        (try
                          (run x)
                          (catch :default e
-                           (js/console.error "cljs-ui: update failed" e)))))))))
+                           (js/console.error "hammer: update failed" e)))))))))
 
 (defn schedule! [^js inst]
   (when-not (.-dirty inst)

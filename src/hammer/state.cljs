@@ -1,5 +1,5 @@
-(ns cljs-ui.state
-  (:require [cljs-ui.trie :as trie]))
+(ns hammer.state
+  (:require [hammer.trie :as trie]))
 
 (defonce app-db (atom {}))
 (defonce paths (trie/node))

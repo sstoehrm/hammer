@@ -1,10 +1,10 @@
-(ns cljs-ui.testing
+(ns hammer.testing
   "Test helpers: synchronous flush and render counters."
-  (:require [cljs-ui.events :as events]
-            [cljs-ui.scheduler :as sched]
-            [cljs-ui.cells :as cells]
-            [cljs-ui.dom :as dom]
-            [cljs-ui.state :as state]))
+  (:require [hammer.events :as events]
+            [hammer.scheduler :as sched]
+            [hammer.cells :as cells]
+            [hammer.dom :as dom]
+            [hammer.state :as state]))
 
 (defn flush!
   "Drains queued events, then renders until nothing is dirty."
@@ -13,7 +13,7 @@
   (loop [n 0]
     (when (sched/pending?)
       (when (= n 10)
-        (throw (js/Error. "cljs-ui: flush did not settle after 10 rounds")))
+        (throw (js/Error. "hammer: flush did not settle after 10 rounds")))
       (sched/flush!)
       (events/drain!)
       (recur (inc n)))))

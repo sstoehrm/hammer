@@ -1,8 +1,8 @@
-(ns cljs-ui.criteria-test
+(ns hammer.criteria-test
   (:require [cljs.test :refer [deftest is use-fixtures]]
-            [cljs-ui.test-env]
-            [cljs-ui.testing :as t]
-            [cljs-ui.core :refer [defc reg-event dispatch-sync mount!]]))
+            [hammer.test-env]
+            [hammer.testing :as t]
+            [hammer.core :refer [defc reg-event dispatch-sync mount!]]))
 
 (use-fixtures :each {:before t/reset-app!})
 
