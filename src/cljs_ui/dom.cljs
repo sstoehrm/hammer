@@ -4,7 +4,8 @@
   (:require [clojure.string :as str]
             [goog.object :as gobj]
             [cljs-ui.cells :as cells]
-            [cljs-ui.events :as events]))
+            [cljs-ui.events :as events]
+            [cljs-ui.scheduler :as sched]))
 
 (deftype VNode [t tag text attrs kids key comp args ^:mutable el ^:mutable inst])
 
@@ -121,7 +122,7 @@
     (node-of (.-vnode ^cells/Instance (.-inst v)))
     (.-el v)))
 
-(declare mount-inst!)
+(declare mount-inst! patch!)
 
 (defn- create!
   "Builds the DOM for v, owned by an instance at depth. Returns the node."
@@ -166,6 +167,96 @@
             (unmount! (.-vnode ^cells/Instance inst))
             (cells/destroy! inst))))
 
+;; ---- patch
+
+(defn- same? [^VNode a ^VNode b]
+  (and (keyword-identical? (.-t a) (.-t b))
+       (case (.-t a)
+         :text true
+         :el (= (.-tag a) (.-tag b))
+         :comp (identical? (.-comp a) (.-comp b)))))
+
+(defn- replace! [^VNode old ^VNode nu depth]
+  (let [o (node-of old)
+        n (create! nu depth)]
+    (.replaceChild (.-parentNode ^js o) n o)
+    (unmount! old)))
+
+(defn update-inst!
+  "Recomputes inst; if a value changed, re-renders and patches its DOM."
+  [^cells/Instance inst]
+  (set! (.-dirty inst) false)
+  (when (.-mounted inst)
+    (when (try (cells/refresh! inst)
+               (catch :default e
+                 (js/console.error "cljs-ui: render failed in" (.-cname ^cells/Comp (.-comp inst)) e)
+                 false))
+      (when-let [v (body-vnode inst)]
+        (let [old (.-vnode inst)]
+          (set! (.-vnode inst) v)
+          (patch! old v (.-depth inst)))))))
+
+(defn- keyed? [^js kids]
+  (and (pos? (alength kids))
+       (.every kids (fn [^VNode k] (some? (.-key k))))
+       (or (= (alength kids) (count (into #{} (map (fn [^VNode k] (.-key k))) kids)))
+           (do (js/console.warn "cljs-ui: duplicate keys, falling back to index diff")
+               false))))
+
+(defn- patch-indexed! [^js el ^js old ^js nu depth]
+  (let [no (alength old)
+        nn (alength nu)]
+    (dotimes [i (min no nn)] (patch! (aget old i) (aget nu i) depth))
+    (loop [i no]
+      (when (< i nn)
+        (.appendChild el (create! (aget nu i) depth))
+        (recur (inc i))))
+    (loop [i nn]
+      (when (< i no)
+        (let [o (aget old i)]
+          (.removeChild el (node-of o))
+          (unmount! o))
+        (recur (inc i))))))
+
+(defn- patch-keyed! [^js el ^js old ^js nu depth]
+  (let [olds (volatile! (reduce (fn [m ^VNode o] (assoc m (.-key o) o)) {} old))]
+    (dotimes [i (alength nu)]
+      (let [n (aget nu i)
+            o (get @olds (.-key ^VNode n))
+            node (if o
+                   (do (vswap! olds dissoc (.-key ^VNode n))
+                       (patch! o n depth)
+                       (node-of n))
+                   (create! n depth))
+            at (.item (.-childNodes el) i)]
+        (when-not (identical? node at)
+          (.insertBefore el node at))))
+    (doseq [o (vals @olds)]
+      (.removeChild el (node-of o))
+      (unmount! o))))
+
+(defn- patch-kids! [^js el old nu depth]
+  (if (and (keyed? old) (keyed? nu))
+    (patch-keyed! el old nu depth)
+    (patch-indexed! el old nu depth)))
+
+(defn- patch! [^VNode old ^VNode nu depth]
+  (if-not (same? old nu)
+    (replace! old nu depth)
+    (case (.-t nu)
+      :text (let [el (.-el old)]
+              (set! (.-el nu) el)
+              (when (not= (.-text old) (.-text nu))
+                (set! (.-nodeValue ^js el) (.-text nu))))
+      :el (let [el (.-el old)]
+            (set! (.-el nu) el)
+            (set-attrs! el (.-attrs old) (.-attrs nu))
+            (patch-kids! el (.-kids old) (.-kids nu) depth))
+      :comp (let [inst (.-inst old)]
+              (set! (.-inst nu) inst)
+              (when (cells/set-props! inst (.-args nu))
+                (update-inst! inst))))))
+
 ;; ---- roots
 
 (defonce ^:private roots (atom {}))
@@ -187,3 +278,5 @@
     (unmount! v)
     (set! (.-textContent ^js el) ""))
   (reset! roots {}))
+
+(sched/set-runner! (fn [inst] (update-inst! inst) (run-refs!)))
