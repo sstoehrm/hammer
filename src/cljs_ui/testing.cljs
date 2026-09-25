@@ -2,7 +2,9 @@
   "Test helpers: synchronous flush and render counters."
   (:require [cljs-ui.events :as events]
             [cljs-ui.scheduler :as sched]
-            [cljs-ui.cells :as cells]))
+            [cljs-ui.cells :as cells]
+            [cljs-ui.dom :as dom]
+            [cljs-ui.state :as state]))
 
 (defn flush!
   "Drains queued events, then renders until nothing is dirty."
@@ -23,3 +25,9 @@
 
 (defn reset-renders! [& cs]
   (doseq [^cells/Comp c cs] (set! (.-renders c) 0)))
+
+(defn reset-app!
+  "Unmounts every root and empties app-db. Use as a :before fixture."
+  []
+  (dom/unmount-all!)
+  (reset! state/app-db {}))
