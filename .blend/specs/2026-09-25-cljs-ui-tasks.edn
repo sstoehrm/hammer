@@ -5,9 +5,9 @@
        :files "package.json, shadow-cljs.edn, src/cljs_ui/trie.cljs"}
   :t2 {:name "2. State, scheduler and binding cells" :state :done
        :files "state.cljs, scheduler.cljs, cells.cljs"}
-  :t3 {:name "3. defc macro" :state :in-progress
+  :t3 {:name "3. defc macro" :state :done
        :files "core.clj, core.cljs (shell)"}
-  :t4 {:name "4. Events and test helpers" :state :new
+  :t4 {:name "4. Events and test helpers" :state :in-progress
        :files "events.cljs, testing.cljs"}
   :t5 {:name "5. DOM mount" :state :new
        :files "dom.cljs (normalize, attrs, create, mount!)"}
