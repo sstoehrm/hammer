@@ -11,10 +11,10 @@
   (let [db (apply update db :todos f args)]
     {:db db :store (:todos db)}))
 
-(reg-event ::add (fn [db title]
-                   (let [id ((fnil inc 0) (last (keys (:todos db))))]
-                     (with-todos db assoc id {:id id :title title :done false}))))
-(reg-event ::toggle (fn [db id] (with-todos db update-in [id :done] not)))
+(reg-event :add (fn [db title]
+                  (let [id ((fnil inc 0) (last (keys (:todos db))))]
+                    (with-todos db assoc id {:id id :title title :done false}))))
+(reg-event :toggle (fn [db id] (with-todos db update-in [id :done] not)))
 (reg-event :save (fn [db id title] (with-todos db assoc-in [id :title] title)))
 (reg-event :delete (fn [db id] (with-todos db dissoc id)))
 (reg-event :clear-done (fn [db] (with-todos db #(into (sorted-map) (remove (comp :done val)) %))))
@@ -31,7 +31,7 @@
    edit (atom nil)]
   [:li {:class [(when (:done todo) "completed") (when @edit "editing")]}
    [:div.view
-    [:input.toggle {:type "checkbox" :checked (:done todo) :on-change [::toggle id]}]
+    [:input.toggle {:type "checkbox" :checked (:done todo) :on-change [:toggle id]}]
     [:label {:on-dblclick #(reset! edit (:title todo))} (:title todo)]
     [:button.destroy {:on-click [:delete id]}]]
    (when @edit
@@ -51,7 +51,7 @@
                     :ref #(some-> % .focus)
                     :on-input #(reset! draft (.. ^js % -target -value))
                     :on-keydown #(when (and (= "Enter" (.-key ^js %)) (not (str/blank? @draft)))
-                                   (dispatch [::add (str/trim @draft)])
+                                   (dispatch [:add (str/trim @draft)])
                                    (reset! draft ""))}])
 
 (defn- shown? [showing t]

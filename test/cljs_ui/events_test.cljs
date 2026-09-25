@@ -14,8 +14,8 @@
 
 (deftest handler-gets-db-and-args
   (reset! state/app-db {:n 1})
-  (ev/reg-event :add (fn [db x y] {:db (update db :n + x y)}))
-  (ev/dispatch-sync [:add 2 3])
+  (ev/reg-event :test/add (fn [db x y] {:db (update db :n + x y)}))
+  (ev/dispatch-sync [:test/add 2 3])
   (is (= {:n 6} @state/app-db)))
 
 (deftest db-applied-before-other-fx-then-dispatch-queued

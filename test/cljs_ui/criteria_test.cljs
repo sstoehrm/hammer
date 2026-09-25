@@ -17,9 +17,9 @@
         ids (vec (range 1000))]
     (mount! [table] el {:ids ids
                         :todos (into {} (map (fn [i] [i {:title (str "t" i) :done false}])) ids)})
-    (reg-event :toggle (fn [db id] {:db (update-in db [:todos id :done] not)}))
+    (reg-event :test/toggle (fn [db id] {:db (update-in db [:todos id :done] not)}))
     (t/reset-renders! row table)
-    (dispatch-sync [:toggle 500])
+    (dispatch-sync [:test/toggle 500])
     (is (= 1 (t/renders row)))
     (is (= 0 (t/renders table)))
     (is (= "done" (.. el -firstChild (querySelectorAll "li") (item 500) (getAttribute "class"))))))
