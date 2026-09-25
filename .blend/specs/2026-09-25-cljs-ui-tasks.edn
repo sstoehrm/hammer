@@ -13,9 +13,9 @@
        :files "dom.cljs (normalize, attrs, create, mount!)"}
   :t6 {:name "6. DOM updates" :state :done
        :files "dom.cljs (patch, keyed diff, runner)"}
-  :t7 {:name "7. Public API + 1000-row criterion" :state :in-progress
+  :t7 {:name "7. Public API + 1000-row criterion" :state :done
        :files "core.cljs, criteria_test.cljs"}
-  :t8 {:name "8. TodoMVC example" :state :new
+  :t8 {:name "8. TodoMVC example" :state :in-progress
        :files "examples/todomvc"}
   :t9 {:name "9. Measurements and README" :state :new
        :files "bb.edn, scripts/count-tokens.cjs, README.md"}}
