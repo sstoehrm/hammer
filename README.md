@@ -26,17 +26,35 @@ and each re-renders by diffing only its own hiccup.
 | `(dispatch ev)` / `(dispatch-sync ev)` | queued (microtask) / immediate + render |
 | `(defc name [props] [bindings] body)` | see above; keys via `^{:key k}` |
 | `(mount! hiccup el db)` | set db, render into `el` |
+| `(mount! hiccup el)` | render into `el`, keeping the current db |
 
-Hiccup: `:on-<dom-event>` takes an event vector or fn; `:ref` fn gets the element
-(and `nil` on removal); `:class` string or collection; `:style` map.
+Hiccup: `:on-<dom-event>` takes an event vector or fn; `:ref` fn gets the element,
+and `nil` on removal, so write it as `#(some-> % .focus)` rather than assuming a
+non-nil element. `:class` string or collection; `:style` map. SVG is not
+supported in v1 — elements are created with `createElement`.
 
 An `(atom ...)` binding is created once per instance and does not follow later
 prop changes. A vector literal binding is always a path; use `(vector a b)` for
 a vector value.
 
+The 2-arity `mount!` renders without touching `app-db`; call it from a
+`^:dev/after-load` hook so a hot reload re-renders with whatever db state the
+running app already has, instead of resetting it.
+
+## Testing
+
+`cljs-ui.testing` provides:
+
+- `(flush!)` — drains queued events, then renders until nothing is dirty
+  (synchronous equivalent of the microtask + animation-frame pipeline).
+- `(renders c)` / `(reset-renders! & cs)` — a component's render count since
+  the last reset; use to assert that only the expected components re-rendered.
+- `(reset-app!)` — unmounts every root and empties `app-db`; use as a
+  `:before` fixture between tests.
+
 ## Measured
 
-- Core size (`bb loc`): 604 lines
+- Core size (`bb loc`): 632 lines
 - TodoMVC tokens vs re-frame (`bb tokens`): 52.5% fewer. Same features (add, toggle,
   toggle all, edit, delete, clear completed, filters, localStorage); re-frame's
   example also validates the db with spec and routes with secretary, ours
