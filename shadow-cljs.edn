@@ -1,0 +1,9 @@
+{:source-paths ["src" "test" "examples/todomvc/src"]
+ :dev-http {8280 "examples/todomvc/public"}
+ :builds {:test {:target :node-test
+                 :output-to "target/test.js"
+                 :ns-regexp "-test$"}
+          :todomvc {:target :browser
+                    :output-dir "examples/todomvc/public/js"
+                    :asset-path "/js"
+                    :modules {:main {:init-fn todomvc.core/main}}}}}
