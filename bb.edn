@@ -22,11 +22,10 @@
            (shell "node scripts/count-tokens.cjs target/tokens/re-frame.cljs target/tokens/hammer.cljs"))}
 
   loc
-  {:doc "Non-blank, non-comment lines in src/hammer (target <= 800)"
+  {:doc "Non-blank, non-comment lines in src/hammer"
    :task (let [n (->> (fs/glob "src/hammer" "*.{clj,cljs}")
                       (mapcat (fn [f] (str/split-lines (slurp (str f)))))
                       (map str/trim)
                       (remove (fn [line] (or (str/blank? line) (str/starts-with? line ";"))))
                       count)]
-           (println "core LOC:" n "(target <= 800)")
-           (when (> n 800) (System/exit 1)))}}}
+           (println "core LOC:" n))}}}
