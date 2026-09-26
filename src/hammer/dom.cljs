@@ -217,22 +217,34 @@
           (set! (.-vnode inst) v)
           (patch! old v (.-depth inst)))))))
 
-(defn- keyed? [^js kids]
-  (and (pos? (alength kids))
-       (.every kids (fn [^VNode k] (some? (.-key k))))
-       (or (= (alength kids) (count (into #{} (map (fn [^VNode k] (.-key k))) kids)))
-           (do (js/console.warn "hammer: duplicate keys, falling back to index diff")
-               false))))
+(defn- key-index
+  "key → index when every kid is keyed and keys are unique, else nil (warns on
+  a duplicate). The verdict is kept on the array, so when these kids become the
+  old side of the next patch they are not checked again."
+  [^js kids]
+  (let [n (alength kids)
+        m (when (and (pos? n) (some? (.-key ^VNode (aget kids 0))))
+            (loop [i 0 m (transient {})]
+              (if (< i n)
+                (let [k (.-key ^VNode (aget kids i))]
+                  (cond
+                    (nil? k) nil
+                    (contains? m k) (js/console.warn "hammer: duplicate keys, falling back to index diff")
+                    :else (recur (inc i) (assoc! m k i))))
+                m)))]
+    (set! (.-__keyed kids) (some? m))
+    m))
 
-(defn- append-from!
-  "Creates nu[from..] into one DocumentFragment and appends it to el once."
-  [^js el ^js nu from depth]
+(defn- insert-from!
+  "Creates nu[from..to) into one DocumentFragment and inserts it before anchor
+  (nil: appends)."
+  [^js el ^js nu from to anchor depth]
   (let [f (.createDocumentFragment js/document)]
     (loop [i from]
-      (when (< i (alength nu))
+      (when (< i to)
         (.appendChild f (create! (aget nu i) depth))
         (recur (inc i))))
-    (.appendChild el f)))
+    (.insertBefore el f anchor)))
 
 (defn- clear-kids!
   "Empties el in one operation, then unmounts old. Valid because an :el's
@@ -245,7 +257,7 @@
   (let [no (alength old)
         nn (alength nu)]
     (dotimes [i (min no nn)] (patch! (aget old i) (aget nu i) depth))
-    (when (< no nn) (append-from! el nu no depth))
+    (when (< no nn) (insert-from! el nu no nn nil depth))
     (loop [i nn]
       (when (< i no)
         (let [o (aget old i)]
@@ -253,41 +265,86 @@
           (unmount! o))
         (recur (inc i))))))
 
-(defn- patch-keyed! [^js el ^js old ^js nu depth]
-  (let [new-keys (into #{} (map (fn [^VNode n] (.-key n))) nu)]
-    (if-not (.some old (fn [^VNode o] (contains? new-keys (.-key o))))
-      (do (clear-kids! el old)
-          (append-from! el nu 0 depth))
-      (let [remaining (volatile!
-                       (reduce (fn [m ^VNode o]
-                                 (if (contains? new-keys (.-key o))
-                                   (assoc m (.-key o) o)
-                                   (do (.removeChild el (node-of o))
-                                       (unmount! o)
-                                       m)))
-                               {} old))]
-        ;; Past the last child nothing old is left to reuse: batch the tail.
-        (loop [i 0]
-          (when (< i (alength nu))
-            (if (>= i (.-length (.-childNodes el)))
-              (append-from! el nu i depth)
-              (let [n (aget nu i)
-                    o (get @remaining (.-key ^VNode n))
-                    node (if o
-                           (do (vswap! remaining dissoc (.-key ^VNode n))
-                               (patch! o n depth)
-                               (node-of n))
-                           (create! n depth))
-                    at (.item (.-childNodes el) i)]
-                (when-not (identical? node at)
-                  (.insertBefore el node at))
-                (recur (inc i))))))))))
+(defn- lis
+  "Indices of a longest increasing subsequence of a, skipping 0s (new kids)."
+  [^js a]
+  (let [p (js/Array. (alength a))
+        r #js []]
+    (dotimes [i (alength a)]
+      (let [x (aget a i)]
+        (when (pos? x)
+          (let [k (loop [lo 0 hi (alength r)]
+                    (if (< lo hi)
+                      (let [mid (bit-shift-right (+ lo hi) 1)]
+                        (if (< (aget a (aget r mid)) x) (recur (inc mid) hi) (recur lo mid)))
+                      lo))]
+            (when (pos? k) (aset p i (aget r (dec k))))
+            (aset r k i)))))
+    (loop [k (dec (alength r)) i (aget r k)]
+      (when (>= k 0)
+        (aset r k i)
+        (recur (dec k) (aget p i))))
+    r))
+
+(defn- patch-keyed!
+  "Patches the common prefix and suffix in place, then matches the middle by
+  key (m: new key → index) and moves only the kids outside the longest run
+  already in order, right to left, so swapping two rows moves two nodes."
+  [^js el ^js old ^js nu m depth]
+  (let [no (alength old)
+        nn (alength nu)
+        same (fn [i j] (= (.-key ^VNode (aget old i)) (.-key ^VNode (aget nu j))))
+        s (loop [i 0]
+            (if (and (< i no) (< i nn) (same i i))
+              (do (patch! (aget old i) (aget nu i) depth) (recur (inc i)))
+              i))
+        t (loop [t 0]
+            (let [oi (- no t 1) ni (- nn t 1)]
+              (if (and (>= oi s) (>= ni s) (same oi ni))
+                (do (patch! (aget old oi) (aget nu ni) depth) (recur (inc t)))
+                t)))
+        ne (- nn t)
+        oe (- no t)]
+    (cond
+      (= s oe) ; nothing old left in the middle: insert the new middle at once
+      (insert-from! el nu s ne (when (< ne nn) (node-of (aget nu ne))) depth)
+
+      (and (zero? s) (zero? t) (not (.some old (fn [^VNode o] (some? (get m (.-key o)))))))
+      (do (clear-kids! el old) ; no key survives: rebuild
+          (insert-from! el nu 0 nn nil depth))
+
+      :else
+      (let [src (.fill (js/Array. (- ne s)) 0)] ; new middle pos → old index + 1, 0 = new
+        (loop [j s]
+          (when (< j (- no t))
+            (let [o (aget old j)]
+              (if-let [i (get m (.-key ^VNode o))]
+                (aset src (- i s) (inc j))
+                (do (.removeChild el (node-of o))
+                    (unmount! o))))
+            (recur (inc j))))
+        (dotimes [i (alength src)]
+          (let [j (aget src i)]
+            (if (pos? j)
+              (patch! (aget old (dec j)) (aget nu (+ s i)) depth)
+              (create! (aget nu (+ s i)) depth))))
+        (let [keep (lis src)]
+          (loop [i (dec (alength src)) k (dec (alength keep))]
+            (when (>= i 0)
+              (if (and (>= k 0) (== i (aget keep k)))
+                (recur (dec i) (dec k))
+                (let [at (+ s i 1)]
+                  (.insertBefore el (node-of (aget nu (+ s i))) (when (< at nn) (node-of (aget nu at))))
+                  (recur (dec i) k))))))))))
 
 (defn- patch-kids! [^js el ^js old ^js nu depth]
-  (cond
-    (zero? (alength nu)) (when (pos? (alength old)) (clear-kids! el old))
-    (and (keyed? old) (keyed? nu)) (patch-keyed! el old nu depth)
-    :else (patch-indexed! el old nu depth)))
+  (if (zero? (alength nu))
+    (when (pos? (alength old)) (clear-kids! el old))
+    (let [m (key-index nu)
+          k (.-__keyed old)]
+      (if (and m (if (nil? k) (key-index old) k))
+        (patch-keyed! el old nu m depth)
+        (patch-indexed! el old nu depth)))))
 
 (defn- patch! [^VNode old ^VNode nu depth]
   (if-not (same? old nu)

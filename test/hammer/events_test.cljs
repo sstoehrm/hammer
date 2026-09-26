@@ -78,7 +78,7 @@
     (t/reset-app!)
     (ev/reg-event :test/set (fn [db v] {:db (assoc db :v v)}))
     (let [el (js/document.createElement "div")
-          view (hammer.cells/component "view" 0 [{:kind :path :deps [] :f (fn [] [:v])}] (fn [v] [:p (str v)]))]
+          view (hammer.cells/component "view" 0 [{:kind :path :deps [] :f (fn [] [:v])}] [0] (fn [v] [:p (str v)]))]
       (hammer.dom/mount! [view] el)
       (ev/dispatch [:test/set 1])
       (ev/dispatch [:test/set 2])
