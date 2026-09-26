@@ -40,6 +40,23 @@ An `(atom ...)` binding is created once per instance and does not follow later
 prop changes. A vector literal binding is always a path; use `(vector a b)` for
 a vector value.
 
+`(is? path v)` as a whole binding init is `true` iff the db value at `path` is `=`
+to `v` (both may name props and earlier bindings). Unlike a `[:selected]` path
+binding, which marks every row when the selection moves, it marks only the
+instances whose result flips, e.g. the old and the new selected row:
+
+```clojure
+(defc row [id]
+  [r    [:rows id]
+   sel? (is? [:selected] id)     ; refer is? from hammer.core
+   cls  (when sel? "danger")]
+  [:tr {:class cls} ...])
+```
+
+`defc` recognizes it by symbol: unqualified `is?`, `hammer.core/is?`, or
+`alias/is?` where the alias names `hammer.core`. Anywhere else, e.g. nested
+inside another expression, calling `is?` throws.
+
 The 2-arity `mount!` renders without touching `app-db`; call it from a
 `^:dev/after-load` hook so a hot reload re-renders with whatever db state the
 running app already has, instead of resetting it.

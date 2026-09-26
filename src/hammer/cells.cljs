@@ -1,5 +1,5 @@
 (ns hammer.cells
-  "Per-instance binding cells: props, path, local and derived slots.
+  "Per-instance binding cells: props, path, eq (is?), local and derived slots.
   Marking is eager; recomputation is lazy (refresh!)."
   (:require [hammer.state :as state]
             [hammer.trie :as trie]
@@ -12,8 +12,8 @@
                    vals stale kinds paths cells])
 
 (defn component
-  "Built by defc. specs: one {:kind :path|:expr, :deps [slot], :f fn} per binding;
-  body-deps: the slots the body names."
+  "Built by defc. specs: one {:kind :path|:eq|:expr, :deps [slot], :f fn} per
+  binding (an :eq f returns [path v]); body-deps: the slots the body names."
   [cname nprops specs body-deps body]
   (Comp. cname nprops
          (to-array (map (fn [{:keys [kind deps f]}] (Spec. kind (to-array deps) f)) specs))
@@ -22,7 +22,7 @@
 (defn component? [x] (instance? Comp x))
 
 (defn mark!
-  "Marks a path or local cell stale and schedules its instance."
+  "Marks a path, eq or local cell stale and schedules its instance."
   [^Cell cell]
   (let [^Instance inst (.-inst cell)]
     (aset (.-stale inst) (.-i cell) true)
@@ -77,6 +77,12 @@
               (aset (.-paths inst) i v)
               (trie/register! state/paths v cell)
               (aset vals i (get-in @state/app-db v)))
+
+          (= kind :eq)
+          (do (aset kinds i :eq)
+              (aset (.-paths inst) i v)
+              (trie/register-eq! state/paths (nth v 0) (nth v 1) cell)
+              (aset vals i (= (get-in @state/app-db (nth v 0)) (nth v 1))))
 
           (satisfies? IWatchable v)
           (do (aset kinds i :local)
@@ -141,6 +147,19 @@
               (when (or dep-changed? (aget stale i))
                 (change! vals changed i (get-in @state/app-db (aget (.-paths inst) i)))))
 
+          :eq
+          (do (when dep-changed?
+                (let [[op ov :as old] (aget (.-paths inst) i)
+                      [p v :as pv] (call (.-f spec) vals (.-deps spec))
+                      cell (aget (.-cells inst) i)]
+                  (when (not= old pv)
+                    (trie/unregister-eq! state/paths op ov cell)
+                    (trie/register-eq! state/paths p v cell)
+                    (aset (.-paths inst) i pv))))
+              (when (or dep-changed? (aget stale i))
+                (let [[p v] (aget (.-paths inst) i)]
+                  (change! vals changed i (= (get-in @state/app-db p) v)))))
+
           :local
           (when (aget stale i) (aset changed i true))
 
@@ -158,11 +177,13 @@
     (.apply (.-body c) nil (.-vals inst))))
 
 (defn destroy!
-  "Unsubscribes paths, removes watches, marks the instance unmounted."
+  "Unsubscribes paths and is? cells, removes watches, marks the instance unmounted."
   [^Instance inst]
   (set! (.-mounted inst) false)
   (dotimes [i (alength (.-vals inst))]
     (case (aget (.-kinds inst) i)
       :path (trie/unregister! state/paths (aget (.-paths inst) i) (aget (.-cells inst) i))
+      :eq (let [[p v] (aget (.-paths inst) i)]
+            (trie/unregister-eq! state/paths p v (aget (.-cells inst) i)))
       :local (remove-watch (aget (.-vals inst) i) (aget (.-cells inst) i))
       nil)))

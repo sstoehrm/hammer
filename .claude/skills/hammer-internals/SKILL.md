@@ -19,7 +19,7 @@ and an example are in `README.md`; this skill covers what only the source shows.
 | `core.clj` | `defc` macro: classifies bindings, computes deps by symbol name |
 | `core.cljs` | public API re-exports, `mount!` (2-arity keeps db) |
 | `events.cljs` | handler/fx registry, microtask queue, `set-db!`, effect processing |
-| `trie.cljs` | path subscriptions; `notify!` walks only changed branches |
+| `trie.cljs` | path subscriptions; `notify!` walks only changed branches; per-node `is?` index value → cells |
 | `cells.cljs` | `Instance` slots: `create`, `set-props!`, `refresh!`, `render`, `destroy!` |
 | `scheduler.cljs` | dirty set, one microtask flush, sorted by depth |
 | `dom.cljs` | hiccup → VNode, create/patch/unmount, attrs, keyed diff, roots |
@@ -30,7 +30,7 @@ and an example are in `README.md`; this skill covers what only the source shows.
 
 1. `dispatch` queues the event, and `drain!` runs in a microtask. `dispatch-sync` processes now and then `sched/flush!`, and throws if called inside a handler. Its `:dispatch` effect is still queued, so that event renders later.
 2. `process!` calls `(apply handler @app-db (rest ev))` (the args, without the event id). `nil` is ignored. With an effect map it applies `:db` → `set-db!`, then `:dispatch` (one event), then every other key through `run-fx!`.
-3. `set-db!` → `trie/notify!`: marks the cells at each visited node and descends into child `k` only when `(get old k)` is not `identical?` to `(get new k)`. So `[:todos]` fires on any todo change, `[:todos 1]` only when that entry changes, and `[]` on every change. This relies on structural sharing.
+3. `set-db!` → `trie/notify!`: marks the cells at each visited node and descends into child `k` only when `(get old k)` is not `identical?` to `(get new k)`. So `[:todos]` fires on any todo change, `[:todos 1]` only when that entry changes, and `[]` on every change. This relies on structural sharing. A visited node's `is?` index (js/Map keyed by `(hash v)`, `=` within the bucket) marks only the cells compared to the old value and to the new value, and none when the two are `=`; cost is independent of how many instances compare against that path.
 4. `cells/mark!` sets the slot's stale flag → `sched/schedule!` queues the instance once → one `queueMicrotask` flush, after the event drain (also a microtask) so a batch of events renders once, before paint.
 5. `flush!` sorts the dirty instances by depth (parents first; ties keep schedule order) and runs the runner (`dom/update-inst!`) on those still dirty. Anything marked during the flush runs in a follow-up microtask.
 6. `refresh!` recomputes stale slots in binding order. A prop, path or derived slot counts as changed only if its new value is not `=` to the old one. A marked `:local` slot always counts as changed, so its dependents recompute. The body renders only if a slot it names (by symbol, as for deps) changed; a slot that only feeds later bindings, or a prop the body never names, recomputes without a render.
@@ -43,6 +43,7 @@ and an example are in `README.md`; this skill covers what only the source shows.
 |---|---|---|---|
 | positional prop | `:prop` | — | parent passes a non-`=` arg |
 | vector literal `[:a id]` | `:path` | macro time | path's deps change (re-registers in the trie) or the trie marks it |
+| `(is? path v)` (whole init) | `:eq` | macro time, by symbol (`is?`, `hammer.core/is?`, alias of `hammer.core`) | path's or `v`'s deps change (re-registers) or the trie marks it; value is `(= (get-in db path) v)` |
 | evaluates to an `IWatchable` | `:local` | runtime, at `create` | never re-run; watch marks when the value is no longer `identical?` |
 | anything else | `:derived` | runtime, at `create` | a named dep (prop or earlier binding) changed |
 
