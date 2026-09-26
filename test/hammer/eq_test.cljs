@@ -152,6 +152,29 @@
          (expand-error (hammer.core/defc bad [] [a (is? [:x])] nil))))
   (is (thrown? js/Error (is? [:x] 1))))
 
+(defc eq-throws [] [ok (is? [:m] 1) bad (is? [:m] (throw (js/Error. "boom")))]
+  [:i (str ok "/" bad)])
+
+(deftest is?-value-throw-is-a-nil-unsubscribed-slot
+  (let [el (container)
+        logs (atom [])
+        orig js/console.error]
+    (set! js/console.error (fn [& a] (swap! logs conj (vec (take 2 a)))))
+    (try
+      (h/mount! [eq-throws] el {:m 1})
+      (finally (set! js/console.error orig)))
+    (is (= "<i>true/</i>" (.-innerHTML el)))
+    (is (= [["hammer: render failed in" "eq-throws"]] @logs))
+    (is (= 1 (.-refs state/paths)))))
+
+(deftest constant-paths-are-built-once
+  (let [[^cells/Spec eq-spec] (.-specs sel-row)
+        [^cells/Spec ids-spec] (.-specs sel-table)]
+    (is (identical? ((.-f eq-spec) 1) ((.-f eq-spec) 2)))
+    (is (= [:selected] ((.-f eq-spec) 1)))
+    (is (= 5 ((.-g eq-spec) 5)))
+    (is (identical? ((.-f ids-spec)) ((.-f ids-spec))))))
+
 (defn- classes [el]
   (vec (keep-indexed (fn [i ^js tr] (when (= "danger" (.-className tr)) i))
                      (js/Array.from (.querySelectorAll el "tr")))))

@@ -20,16 +20,29 @@
              (= 'hammer.core (symbol q))
              (= 'hammer.core (get-in env [:ns :requires (symbol q)]))))))
 
+(defn- lit? [x] (or (string? x) (number? x) (keyword? x) (boolean? x) (nil? x)))
+
+(defn- slot-fn
+  "fn of the dep slots returning form; a vector of literals (a constant path)
+  is built once and shared by every call."
+  [args form]
+  (if (and (vector? form) (every? lit? form))
+    `(let [p# ~form] (fn ~args p#))
+    `(fn ~args ~form)))
+
 (defn- binding-spec
-  "slots: props and earlier binding names visible to this init."
+  "slots: props and earlier binding names visible to this init. An :eq spec
+  has :f for the path and :g for the compared value."
   [env slots [_ init]]
   (let [deps (deps-of slots init)
+        args (mapv slots deps)
         eq? (is?-form? env init)]
     (when (and eq? (not= 3 (count init)))
       (throw (ex-info "defc: is? takes a path and a value" {:form init})))
-    `{:kind ~(cond eq? :eq (vector? init) :path :else :expr)
-      :deps ~deps
-      :f (fn ~(mapv slots deps) ~(if eq? (vec (rest init)) init))}))
+    (cond
+      eq? `{:kind :eq :deps ~deps :f ~(slot-fn args (nth init 1)) :g (fn ~args ~(nth init 2))}
+      (vector? init) `{:kind :path :deps ~deps :f ~(slot-fn args init)}
+      :else `{:kind :expr :deps ~deps :f (fn ~args ~init)})))
 
 ;; ---- template compiler
 ;;
@@ -37,8 +50,6 @@
 ;; if/when/let/cond/case/for tails, and the children of such elements) become
 ;; a template, built once and cloned per instance, plus the values of its
 ;; holes. Hole kinds are those of hammer.dom/template.
-
-(defn- lit? [x] (or (string? x) (number? x) (keyword? x) (boolean? x) (nil? x)))
 
 (defn- el? [x] (and (vector? x) (keyword? (first x))))
 

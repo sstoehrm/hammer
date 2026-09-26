@@ -6,7 +6,7 @@
             [hammer.scheduler :as sched]))
 
 (deftype Comp [cname nprops specs body-deps body ^:mutable renders])
-(deftype Spec [kind deps f])
+(deftype Spec [kind deps f g])
 ;; A subscribed slot: kind 0 path, 1 eq (is?), 2 local. path: the db path
 ;; (path, eq); v: the compared value (eq).
 (deftype Cell [inst i kind ^:mutable path ^:mutable v ^:mutable stale])
@@ -17,10 +17,11 @@
 
 (defn component
   "Built by defc. specs: one {:kind :path|:eq|:expr, :deps [slot], :f fn} per
-  binding (an :eq f returns [path v]); body-deps: the slots the body names."
+  binding (an :eq f returns the path, its :g the compared value); body-deps:
+  the slots the body names."
   [cname nprops specs body-deps body]
   (Comp. cname nprops
-         (to-array (map (fn [{:keys [kind deps f]}] (Spec. kind (to-array deps) f)) specs))
+         (to-array (map (fn [{:keys [kind deps f g]}] (Spec. kind (to-array deps) f g)) specs))
          (to-array body-deps) body 0))
 
 (defn component? [x] (instance? Comp x))
@@ -66,10 +67,10 @@
 (def ^:private failed #js {})
 
 (defn- init
-  "Runs a binding init; failed (logged) if it throws."
-  [^Comp c ^Spec spec vals]
+  "Calls binding fn f with its deps; failed (logged) if it throws."
+  [^Comp c f vals deps]
   (try
-    (call (.-f spec) vals (.-deps spec))
+    (call f vals deps)
     (catch :default e
       (js/console.error "hammer: render failed in" (.-cname c) e)
       failed)))
@@ -92,9 +93,12 @@
       (let [i (+ np j)
             ^Spec spec (aget specs j)
             kind (.-kind spec)
-            v (init c spec vals)]
+            v (init c (.-f spec) vals (.-deps spec))
+            ev (if (and (.-g spec) (not (identical? v failed)))
+                 (init c (.-g spec) vals (.-deps spec))
+                 v)]
         (cond
-          (identical? v failed)
+          (identical? ev failed)
           (aset vals i nil)
 
           (keyword-identical? kind :path)
@@ -104,7 +108,7 @@
             (aset vals i (cell-value cell)))
 
           (keyword-identical? kind :eq)
-          (let [cell (Cell. inst i 1 (nth v 0) (nth v 1) false)]
+          (let [cell (Cell. inst i 1 v ev false)]
             (aset cells i cell)
             (subscribe! cell)
             (aset vals i (cell-value cell)))
@@ -180,10 +184,8 @@
 
           :else
           (do (when dep-changed?
-                (let [x (call (.-f spec) vals (.-deps spec))
-                      eq? (== (.-kind cell) 1)
-                      p (if eq? (nth x 0) x)
-                      v (when eq? (nth x 1))]
+                (let [p (call (.-f spec) vals (.-deps spec))
+                      v (when (== (.-kind cell) 1) (call (.-g spec) vals (.-deps spec)))]
                   (when-not (and (= p (.-path cell)) (= v (.-v cell)))
                     (unsubscribe! cell)
                     (set! (.-path cell) p)
