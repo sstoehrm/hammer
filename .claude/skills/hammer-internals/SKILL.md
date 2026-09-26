@@ -58,6 +58,7 @@ per-hole regions. Update writes only holes whose value is not `identical?`;
 | `:on-*`, `:ref`, `:value/:checked/:selected` | always holes (expandos/properties aren't cloned) |
 | non-literal second item `[:td x]` | kid hole, but the whole template renders as plain hiccup whenever `x` is a map |
 | attrs map with non-keyword keys, non-keyword tag, component vectors | plain hiccup (children still compiled) |
+| `[c & args]` with a symbol head (component vector) | a `:comp` VNode built in place (key from `^{:key}`, args = the vector) when `c` is a component at runtime; otherwise the plain vector |
 
 Not compiled: binding inits, component args, args of any other call, and
 `hammer.dom/mount!` hiccup. A compiled vnode is mutable, so these positions

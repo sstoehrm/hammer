@@ -378,3 +378,29 @@
     (is (= (+ before 2 3) (.-refs state/paths)))
     (dom/mount! [:p] el)
     (is (= before (.-refs state/paths)))))
+
+;; component vectors in hiccup position compile to :comp vnodes
+
+(events/reg-event :set-tag (fn [db t] {:db (assoc db :tag t)}))
+
+(defc cc-leaf [x] [] [:b x])
+(defc cc-dyn [t] [tag [:tag]]
+  [:div [tag "x"] [cc-leaf t] (let [f cc-leaf] ^{:key 1} [f "y"])])
+(defc cc-list [] [ks [:ks]] [:ul (for [k ks] ^{:key k} [cc-leaf k])])
+
+(deftest component-vectors-compile-with-runtime-fallback
+  (let [el (container)]
+    (reset! state/app-db {:tag :i})
+    (dom/mount! [cc-dyn "z"] el)
+    (is (= "<div><i>x</i><b>z</b><b>y</b></div>" (.-innerHTML el)) "a symbol bound to a keyword stays a tag")
+    (events/dispatch-sync [:set-tag :span])
+    (is (= "<div><span>x</span><b>z</b><b>y</b></div>" (.-innerHTML el)))))
+
+(deftest compiled-component-vnodes-keep-keys
+  (let [el (container)]
+    (reset! state/app-db {:ks ["a" "b" "c"]})
+    (dom/mount! [cc-list] el)
+    (let [[a b c] (vec (.. el -firstChild -children))]
+      (events/dispatch-sync [:set :ks ["c" "a" "b"]])
+      (is (= [c a b] (vec (.. el -firstChild -children))))
+      (is (= "<ul><b>c</b><b>a</b><b>b</b></ul>" (.-innerHTML el))))))

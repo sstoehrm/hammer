@@ -63,6 +63,20 @@
 
 (declare compile-el)
 
+(defn- comp-vec? [x] (and (vector? x) (symbol? (first x))))
+
+(defn- compile-comp
+  "[c & args] in hiccup position: a :comp VNode built directly (no key
+  metadata map, no normalize) when c is a component at runtime, else the
+  plain vector."
+  [v]
+  (let [h (gensym "c")
+        hv (with-meta (into [h] (rest v)) (meta v))]
+    `(let [~h ~(first v)]
+       (if (hammer.cells/component? ~h)
+         (new hammer.dom/VNode :comp nil nil nil nil ~(:key (meta v)) ~h ~(with-meta hv nil) nil nil)
+         ~hv))))
+
 (defn- compile-pos
   "Compiles the literal elements that are form's value: form itself, or the
   tails of the control forms below. Other positions (binding inits, call and
@@ -72,8 +86,10 @@
         at (fn [idx]
              (with-meta (apply list (map-indexed (fn [i x] (if (idx i) (compile-pos ctx x) x)) form))
                (meta form)))]
-    (if (el? form)
-      (compile-el ctx form)
+    (cond
+      (el? form) (compile-el ctx form)
+      (comp-vec? form) (compile-comp form)
+      :else
       (case (op form)
         ("if" "if-not" "if-let" "if-some") (at #{2 3})
         ("when" "when-not" "when-let" "when-some" "when-first" "let" "binding")
