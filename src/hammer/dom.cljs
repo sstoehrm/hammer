@@ -224,14 +224,28 @@
            (do (js/console.warn "hammer: duplicate keys, falling back to index diff")
                false))))
 
+(defn- append-from!
+  "Creates nu[from..] into one DocumentFragment and appends it to el once."
+  [^js el ^js nu from depth]
+  (let [f (.createDocumentFragment js/document)]
+    (loop [i from]
+      (when (< i (alength nu))
+        (.appendChild f (create! (aget nu i) depth))
+        (recur (inc i))))
+    (.appendChild el f)))
+
+(defn- clear-kids!
+  "Empties el in one operation, then unmounts old. Valid because an :el's
+  child nodes are exactly its kids' nodes."
+  [^js el ^js old]
+  (set! (.-textContent el) "")
+  (.forEach old (fn [k] (unmount! k))))
+
 (defn- patch-indexed! [^js el ^js old ^js nu depth]
   (let [no (alength old)
         nn (alength nu)]
     (dotimes [i (min no nn)] (patch! (aget old i) (aget nu i) depth))
-    (loop [i no]
-      (when (< i nn)
-        (.appendChild el (create! (aget nu i) depth))
-        (recur (inc i))))
+    (when (< no nn) (append-from! el nu no depth))
     (loop [i nn]
       (when (< i no)
         (let [o (aget old i)]
@@ -240,31 +254,40 @@
         (recur (inc i))))))
 
 (defn- patch-keyed! [^js el ^js old ^js nu depth]
-  (let [new-keys (into #{} (map (fn [^VNode n] (.-key n))) nu)
-        remaining (volatile!
-                   (reduce (fn [m ^VNode o]
-                             (if (contains? new-keys (.-key o))
-                               (assoc m (.-key o) o)
-                               (do (.removeChild el (node-of o))
-                                   (unmount! o)
-                                   m)))
-                           {} old))]
-    (dotimes [i (alength nu)]
-      (let [n (aget nu i)
-            o (get @remaining (.-key ^VNode n))
-            node (if o
-                   (do (vswap! remaining dissoc (.-key ^VNode n))
-                       (patch! o n depth)
-                       (node-of n))
-                   (create! n depth))
-            at (.item (.-childNodes el) i)]
-        (when-not (identical? node at)
-          (.insertBefore el node at))))))
+  (let [new-keys (into #{} (map (fn [^VNode n] (.-key n))) nu)]
+    (if-not (.some old (fn [^VNode o] (contains? new-keys (.-key o))))
+      (do (clear-kids! el old)
+          (append-from! el nu 0 depth))
+      (let [remaining (volatile!
+                       (reduce (fn [m ^VNode o]
+                                 (if (contains? new-keys (.-key o))
+                                   (assoc m (.-key o) o)
+                                   (do (.removeChild el (node-of o))
+                                       (unmount! o)
+                                       m)))
+                               {} old))]
+        ;; Past the last child nothing old is left to reuse: batch the tail.
+        (loop [i 0]
+          (when (< i (alength nu))
+            (if (>= i (.-length (.-childNodes el)))
+              (append-from! el nu i depth)
+              (let [n (aget nu i)
+                    o (get @remaining (.-key ^VNode n))
+                    node (if o
+                           (do (vswap! remaining dissoc (.-key ^VNode n))
+                               (patch! o n depth)
+                               (node-of n))
+                           (create! n depth))
+                    at (.item (.-childNodes el) i)]
+                (when-not (identical? node at)
+                  (.insertBefore el node at))
+                (recur (inc i))))))))))
 
-(defn- patch-kids! [^js el old nu depth]
-  (if (and (keyed? old) (keyed? nu))
-    (patch-keyed! el old nu depth)
-    (patch-indexed! el old nu depth)))
+(defn- patch-kids! [^js el ^js old ^js nu depth]
+  (cond
+    (zero? (alength nu)) (when (pos? (alength old)) (clear-kids! el old))
+    (and (keyed? old) (keyed? nu)) (patch-keyed! el old nu depth)
+    :else (patch-indexed! el old nu depth)))
 
 (defn- patch! [^VNode old ^VNode nu depth]
   (if-not (same? old nu)
