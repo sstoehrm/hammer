@@ -1,13 +1,17 @@
 (ns hammer.dom
   "Hiccup → DOM. Each instance keeps its last normalized hiccup (vnode) and is
-  diffed only against itself; child components are boundaries."
+  diffed only against itself; child components are boundaries. defc compiles
+  literal element trees to :tpl vnodes: a template cloned per instance plus
+  an array of hole values, diffed hole by hole."
   (:require [clojure.string :as str]
             [goog.object :as gobj]
             [hammer.cells :as cells]
             [hammer.events :as events]
             [hammer.scheduler :as sched]))
 
-(deftype VNode [t tag text attrs kids key comp args ^:mutable el ^:mutable inst])
+;; t :text/:el/:comp, or :tpl (from defc): tag = Tpl, attrs = hole values,
+;; kids = hole nodes, inst = per-hole region vnodes (nil in text mode).
+(deftype VNode [t tag text attrs ^:mutable kids key comp args ^:mutable el ^:mutable inst])
 
 ;; ---- normalize
 
@@ -48,9 +52,11 @@
   out)
 
 (defn normalize
-  "Hiccup → VNode (:text, :el or :comp)."
+  "Hiccup → VNode (:text, :el or :comp); a compiled :tpl VNode passes through."
   [x]
   (cond
+    (instance? VNode x) x
+
     (vector? x)
     (let [h (nth x 0)
           k (:key (meta x))]
@@ -104,31 +110,41 @@
 (defn- prop? [k]
   (or (keyword-identical? k :value) (keyword-identical? k :checked) (keyword-identical? k :selected)))
 
+(defn- set-on!
+  "Stores handler v for event type t on el; registers t for delegation when
+  reg? (the element had no handler for t before)."
+  [^js el t v reg?]
+  (let [hs (or (.-__cuiH el) (let [o #js {}] (set! (.-__cuiH el) o) o))]
+    (when reg? (.add new-types t))
+    (gobj/set hs t v)))
+
+(defn- set-style! [^js el old v]
+  (let [s (.-style el)]
+    (doseq [[sk sv] v]
+      (when (not= sv (get old sk)) (.setProperty s (name sk) (str sv))))
+    (doseq [[sk _] old]
+      (when-not (contains? v sk) (.removeProperty s (name sk))))))
+
+(defn- set-prop!
+  "Writes :value/:checked/:selected (n is its name) only if the live element differs."
+  [^js el n v]
+  (let [v (if (= n "value") (str (or v "")) (boolean v))]
+    (when (not= v (gobj/get el n)) (gobj/set el n v))))
+
+(defn- set-plain! [^js el n v]
+  (cond
+    (or (nil? v) (false? v)) (.removeAttribute el n)
+    (true? v) (.setAttribute el n "")
+    :else (.setAttribute el n (str v))))
+
 (defn- set-attr! [^js el k old v]
   (let [n (name k)]
     (cond
       (= k :ref) nil
-
-      (str/starts-with? n "on-")
-      (let [t (subs n 3)
-            hs (or (.-__cuiH el) (let [o #js {}] (set! (.-__cuiH el) o) o))]
-        (when-not old (.add new-types t))
-        (gobj/set hs t v))
-
-      (= k :style)
-      (let [s (.-style el)]
-        (doseq [[sk sv] v]
-          (when (not= sv (get old sk)) (.setProperty s (name sk) (str sv))))
-        (doseq [[sk _] old]
-          (when-not (contains? v sk) (.removeProperty s (name sk)))))
-
-      (prop? k)
-      (let [v (if (= k :value) (str (or v "")) (boolean v))]
-        (when (not= v (gobj/get el n)) (gobj/set el n v)))
-
-      (or (nil? v) (false? v)) (.removeAttribute el n)
-      (true? v) (.setAttribute el n "")
-      :else (.setAttribute el n (str v)))))
+      (str/starts-with? n "on-") (set-on! el (subs n 3) v (not old))
+      (= k :style) (set-style! el old v)
+      (prop? k) (set-prop! el n v)
+      :else (set-plain! el n v))))
 
 (defn- set-attrs!
   "Applies attrs nu over old. :value/:checked/:selected are always compared
@@ -145,7 +161,7 @@
                    (set-attr! el k v nil)))
                nil old)))
 
-;; ---- create / unmount
+;; ---- refs and kid ranges
 
 (defonce ^:private ref-queue #js [])
 
@@ -168,7 +184,159 @@
     (node-of (.-vnode ^cells/Instance (.-inst v)))
     (.-el v)))
 
-(declare mount-inst! patch!)
+(declare mount-inst! patch! create! unmount! patch-kids!)
+
+(defn- insert-from!
+  "Creates nu[from..to) into one DocumentFragment and inserts it before anchor
+  (nil: appends)."
+  [^js el ^js nu from to anchor depth]
+  (let [f (.createDocumentFragment js/document)]
+    (loop [i from]
+      (when (< i to)
+        (.appendChild f (create! (aget nu i) depth))
+        (recur (inc i))))
+    (.insertBefore el f anchor)))
+
+(defn- clear-kids!
+  "Removes old's nodes from el, then unmounts old. With no end anchor the kids
+  are all of el's child nodes, so el is emptied in one operation."
+  [^js el ^js old end]
+  (if end
+    (.forEach old (fn [k] (.removeChild el (node-of k))))
+    (set! (.-textContent el) ""))
+  (.forEach old (fn [k] (unmount! k))))
+
+;; ---- templates (compiled by defc)
+
+(deftype Tpl [skel ^:mutable proto kinds names resolve])
+
+(defn template
+  "Built by defc. skel: the static hiccup, with \"\" at each kid hole and
+  without the attrs that are holes. kinds/names: per hole, the kind and its
+  name (attr name, event type, or the tag's static classes). resolve: clone
+  root → array of hole nodes. Kinds: 0 kid among siblings (node: its text
+  node, also the region's end anchor), 1 sole kid (node: its element),
+  2 attr, 3 :class, 4 :style, 5 :value/:checked/:selected, 6 :on-*, 7 :ref."
+  [skel kinds names resolve]
+  (Tpl. skel nil kinds names resolve))
+
+(defn- proto
+  "The template's DOM, built once on first use and then cloned."
+  [^Tpl d]
+  (or (.-proto d)
+      (let [n (create! (normalize (.-skel d)) 0)]
+        (set! (.-proto d) n)
+        n)))
+
+(defn- hiccup? [x] (or (vector? x) (seq? x) (instance? VNode x)))
+
+(defn- text-of [x] (if (or (nil? x) (false? x)) "" (str x)))
+
+(defn- join-class
+  "The class attribute for static tag classes cls and :class value c, as normalize builds it."
+  [cls c]
+  (let [c (class-str c)]
+    (if cls (if c (str cls " " c) cls) c)))
+
+(defn- set-kid!
+  "Sets kid hole i of v from o to x. Hiccup (vector, seq, vnode) becomes a
+  region of vnodes patched like an element's kids; anything else is text.
+  one?: n is the hole's element and the region owns all its child nodes;
+  otherwise n is the hole's text node, which stays as the region's end."
+  [^VNode v i one? ^js n o x depth]
+  (let [^js regs (.-inst v)
+        old (when regs (aget regs i))]
+    (if (hiccup? x)
+      (let [nu (push-kid! #js [] x)
+            el (if one? n (.-parentNode n))
+            end (when-not one? n)]
+        (if old
+          (patch-kids! el old nu depth end)
+          (do (if one? (set! (.-textContent n) "") (set! (.-data n) ""))
+              (when (pos? (alength nu)) (insert-from! el nu 0 (alength nu) end depth))))
+        (let [^js regs (or regs
+                           (let [r (make-array (alength (.-kinds ^Tpl (.-tag v))))]
+                             (set! (.-inst v) r)
+                             r))]
+          (aset regs i nu)))
+      (let [s (text-of x)]
+        (if old
+          (do (if one?
+                (do (clear-kids! n old nil)
+                    (.appendChild n (.createTextNode js/document s)))
+                (do (clear-kids! (.-parentNode n) old n)
+                    (set! (.-data n) s)))
+              (aset regs i nil))
+          (when-not (= s (text-of o))
+            (set! (.-data ^js (if one? (.-firstChild n) n)) s)))))))
+
+(defn- set-hole!
+  "Writes hole i (kind k, node n, name nm) of v from value o to x."
+  [^VNode v i k ^js n nm o x depth]
+  (case k
+    0 (set-kid! v i false n o x depth)
+    1 (set-kid! v i true n o x depth)
+    2 (when (not= o x) (set-plain! n nm x))
+    3 (let [b (join-class nm x)]
+        (when (not= (join-class nm o) b) (set-plain! n "class" b)))
+    4 (when (not= o x) (set-style! n o x))
+    5 (set-prop! n nm x)
+    6 (set-on! n nm x (nil? o))
+    nil))
+
+(defn- create-tpl!
+  "Clones the template, resolves the hole nodes and writes every hole.
+  Holes are in post-order, so kids exist before their element's attrs
+  (select :value) and refs queue children first."
+  [^VNode v depth]
+  (let [^Tpl d (.-tag v)
+        root (.cloneNode ^js (proto d) true)
+        nodes ((.-resolve d) root)
+        vals (.-attrs v)
+        kinds (.-kinds d)
+        names (.-names d)]
+    (set! (.-el v) root)
+    (set! (.-kids v) nodes)
+    (dotimes [i (alength kinds)]
+      (let [k (aget kinds i)
+            x (aget vals i)]
+        (cond
+          (== k 7) (when x (.push ref-queue #js [x (aget nodes i)]))
+          (or (some? x) (== k 5)) (set-hole! v i k (aget nodes i) (aget names i) nil x depth))))
+    root))
+
+(defn- patch-tpl!
+  "Writes the holes whose value is not identical? to the old one; props are
+  always compared against the live element, refs are kept for unmount."
+  [^VNode old ^VNode nu depth]
+  (let [^Tpl d (.-tag nu)
+        nodes (.-kids old)
+        ov (.-attrs old)
+        nv (.-attrs nu)
+        kinds (.-kinds d)
+        names (.-names d)]
+    (set! (.-el nu) (.-el old))
+    (set! (.-kids nu) nodes)
+    (set! (.-inst nu) (.-inst old))
+    (dotimes [i (alength kinds)]
+      (let [k (aget kinds i)
+            o (aget ov i)
+            x (aget nv i)]
+        (when (or (== k 5) (not (identical? o x)))
+          (set-hole! nu i k (aget nodes i) (aget names i) o x depth))))))
+
+(defn- unmount-tpl! [^VNode v]
+  (let [^Tpl d (.-tag v)
+        kinds (.-kinds d)
+        vals (.-attrs v)
+        ^js regs (.-inst v)]
+    (dotimes [i (alength kinds)]
+      (let [k (aget kinds i)]
+        (cond
+          (== k 7) (when-let [r (aget vals i)] (safe-ref! r nil))
+          (and regs (< k 2)) (when-let [ks (aget regs i)] (.forEach ks (fn [x] (unmount! x)))))))))
+
+;; ---- create / unmount
 
 (defn- create!
   "Builds the DOM for v, owned by an instance at depth. Returns the node."
@@ -184,6 +352,7 @@
           (when-let [r (:ref attrs)] (.push ref-queue #js [r el]))
           (set! (.-el v) el)
           el)
+    :tpl (create-tpl! v depth)
     :comp (let [inst (cells/create (.-comp v) (.-args v) (inc depth))]
             (set! (.-inst v) inst)
             (mount-inst! inst))))
@@ -209,6 +378,7 @@
     :text nil
     :el (do (.forEach (.-kids v) (fn [k] (unmount! k)))
             (when-let [r (:ref (.-attrs v))] (safe-ref! r nil)))
+    :tpl (unmount-tpl! v)
     :comp (let [inst (.-inst v)]
             (unmount! (.-vnode ^cells/Instance inst))
             (cells/destroy! inst))))
@@ -220,6 +390,7 @@
        (case (.-t a)
          :text true
          :el (= (.-tag a) (.-tag b))
+         :tpl (identical? (.-tag a) (.-tag b))
          :comp (identical? (.-comp a) (.-comp b)))))
 
 (defn- replace! [^VNode old ^VNode nu depth]
@@ -260,29 +431,14 @@
     (set! (.-__keyed kids) (some? m))
     m))
 
-(defn- insert-from!
-  "Creates nu[from..to) into one DocumentFragment and inserts it before anchor
-  (nil: appends)."
-  [^js el ^js nu from to anchor depth]
-  (let [f (.createDocumentFragment js/document)]
-    (loop [i from]
-      (when (< i to)
-        (.appendChild f (create! (aget nu i) depth))
-        (recur (inc i))))
-    (.insertBefore el f anchor)))
+;; The kids functions below take end: the node after the kids in el, or nil
+;; when they are all of el's child nodes (an :el, or a template's sole kid).
 
-(defn- clear-kids!
-  "Empties el in one operation, then unmounts old. Valid because an :el's
-  child nodes are exactly its kids' nodes."
-  [^js el ^js old]
-  (set! (.-textContent el) "")
-  (.forEach old (fn [k] (unmount! k))))
-
-(defn- patch-indexed! [^js el ^js old ^js nu depth]
+(defn- patch-indexed! [^js el ^js old ^js nu depth end]
   (let [no (alength old)
         nn (alength nu)]
     (dotimes [i (min no nn)] (patch! (aget old i) (aget nu i) depth))
-    (when (< no nn) (insert-from! el nu no nn nil depth))
+    (when (< no nn) (insert-from! el nu no nn end depth))
     (loop [i nn]
       (when (< i no)
         (let [o (aget old i)]
@@ -315,7 +471,7 @@
   "Patches the common prefix and suffix in place, then matches the middle by
   key (m: new key → index) and moves only the kids outside the longest run
   already in order, right to left, so swapping two rows moves two nodes."
-  [^js el ^js old ^js nu m depth]
+  [^js el ^js old ^js nu m depth end]
   (let [no (alength old)
         nn (alength nu)
         same (fn [i j] (= (.-key ^VNode (aget old i)) (.-key ^VNode (aget nu j))))
@@ -332,11 +488,11 @@
         oe (- no t)]
     (cond
       (= s oe) ; nothing old left in the middle: insert the new middle at once
-      (insert-from! el nu s ne (when (< ne nn) (node-of (aget nu ne))) depth)
+      (insert-from! el nu s ne (if (< ne nn) (node-of (aget nu ne)) end) depth)
 
       (and (zero? s) (zero? t) (not (.some old (fn [^VNode o] (some? (get m (.-key o)))))))
-      (do (clear-kids! el old) ; no key survives: rebuild
-          (insert-from! el nu 0 nn nil depth))
+      (do (clear-kids! el old end) ; no key survives: rebuild
+          (insert-from! el nu 0 nn end depth))
 
       :else
       (let [src (.fill (js/Array. (- ne s)) 0)] ; new middle pos → old index + 1, 0 = new
@@ -359,17 +515,17 @@
               (if (and (>= k 0) (== i (aget keep k)))
                 (recur (dec i) (dec k))
                 (let [at (+ s i 1)]
-                  (.insertBefore el (node-of (aget nu (+ s i))) (when (< at nn) (node-of (aget nu at))))
+                  (.insertBefore el (node-of (aget nu (+ s i))) (if (< at nn) (node-of (aget nu at)) end))
                   (recur (dec i) k))))))))))
 
-(defn- patch-kids! [^js el ^js old ^js nu depth]
+(defn- patch-kids! [^js el ^js old ^js nu depth end]
   (if (zero? (alength nu))
-    (when (pos? (alength old)) (clear-kids! el old))
+    (when (pos? (alength old)) (clear-kids! el old end))
     (let [m (key-index nu)
           k (.-__keyed old)]
       (if (and m (if (nil? k) (key-index old) k))
-        (patch-keyed! el old nu m depth)
-        (patch-indexed! el old nu depth)))))
+        (patch-keyed! el old nu m depth end)
+        (patch-indexed! el old nu depth end)))))
 
 (defn- patch! [^VNode old ^VNode nu depth]
   (if-not (same? old nu)
@@ -382,7 +538,8 @@
       :el (let [el (.-el old)]
             (set! (.-el nu) el)
             (set-attrs! el (.-attrs old) (.-attrs nu))
-            (patch-kids! el (.-kids old) (.-kids nu) depth))
+            (patch-kids! el (.-kids old) (.-kids nu) depth nil))
+      :tpl (patch-tpl! old nu depth)
       :comp (let [inst (.-inst old)]
               (set! (.-inst nu) inst)
               (when (cells/set-props! inst (.-args nu))

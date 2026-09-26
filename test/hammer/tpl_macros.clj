@@ -1,0 +1,9 @@
+(ns hammer.tpl-macros)
+
+(defmacro defboth
+  "Defines name, a defc whose slots args read the db keys of the same name
+  (so body is compiled), and name-plain, a fn of args returning body as
+  plain uncompiled hiccup."
+  [name args body]
+  `(do (hammer.core/defc ~name [] [~@(mapcat (fn [a] [a [(keyword a)]]) args)] ~body)
+       (defn ~(symbol (str name "-plain")) [~@args] ~body)))

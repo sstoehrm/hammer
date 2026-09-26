@@ -28,12 +28,17 @@
 
 (deftest defc-instances-render
   (reset! state/app-db {:todos {7 {:title "x"}}})
-  (let [inst (cells/create row [7] 1)]
-    (is (= [:li {:data-n 1} "x"] (cells/render inst)))
+  (let [inst (cells/create row [7] 1)
+        ^js v (cells/render inst)]
+    ;; a compiled template: hole values in post-order (kids, then attrs)
+    (is (= :tpl (.-t v)))
+    (is (= ["x" 1] (vec (.-attrs v))))
     (is (= [7 1] (aget (.-vals inst) 5)))
     (cells/destroy! inst))
-  (let [inst (cells/create plain [] 1)]
-    (is (= [:hr] (cells/render inst)))
+  (let [inst (cells/create plain [] 1)
+        ^js v (cells/render inst)]
+    (is (= :tpl (.-t v)))
+    (is (= [] (vec (.-attrs v))))
     (cells/destroy! inst)))
 
 (deftest defc-rejects-bad-names-at-compile-time

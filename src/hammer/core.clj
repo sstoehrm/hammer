@@ -1,4 +1,6 @@
-(ns hammer.core)
+(ns hammer.core
+  (:require [clojure.string :as str]
+            [clojure.walk :as walk]))
 
 (defn- deps-of
   "Indices of the slots named anywhere in form (metadata included)."
@@ -14,11 +16,193 @@
       :deps ~deps
       :f (fn ~(mapv slots deps) ~init)}))
 
+;; ---- template compiler
+;;
+;; Literal element vectors in hiccup position (the body's value, through
+;; if/when/let/cond/case/for tails, and the children of such elements) become
+;; a template, built once and cloned per instance, plus the values of its
+;; holes. Hole kinds are those of hammer.dom/template.
+
+(defn- lit? [x] (or (string? x) (number? x) (keyword? x) (boolean? x) (nil? x)))
+
+(defn- el? [x] (and (vector? x) (keyword? (first x))))
+
+(defn- op
+  "Name of form's head when it is an unqualified or core symbol."
+  [form]
+  (when (seq? form)
+    (let [s (first form)]
+      (when (and (symbol? s) (contains? #{nil "cljs.core" "clojure.core"} (namespace s)))
+        (name s)))))
+
+(declare compile-el)
+
+(defn- compile-pos
+  "Compiles the literal elements that are form's value: form itself, or the
+  tails of the control forms below. Other positions (binding inits, call and
+  component args) keep plain hiccup data."
+  [ctx form]
+  (let [n (when (seq? form) (count form))
+        at (fn [idx]
+             (with-meta (apply list (map-indexed (fn [i x] (if (idx i) (compile-pos ctx x) x)) form))
+               (meta form)))]
+    (if (el? form)
+      (compile-el ctx form)
+      (case (op form)
+        ("if" "if-not" "if-let" "if-some") (at #{2 3})
+        ("when" "when-not" "when-let" "when-some" "when-first" "let" "binding")
+        (if (> n 2) (at #{(dec n)}) form)
+        "do" (if (> n 1) (at #{(dec n)}) form)
+        "cond" (at (set (range 2 n 2)))
+        "case" (at (into (set (range 3 n 2)) (when (odd? n) [(dec n)])))
+        "for" (if (= n 3) (at #{2}) form)
+        form))))
+
+(defn- attrs-at
+  "[attrs index-of-first-child maybe-attrs?] of element v, or nil for a map
+  literal with non-keyword keys. maybe-attrs?: the second item is an
+  expression that might be an attrs map at runtime; it is compiled as a kid,
+  and the template falls back to plain hiccup whenever it is a map."
+  [v]
+  (let [a (nth v 1 nil)]
+    (cond
+      (map? a) (when (every? keyword? (keys a)) [a 2 false])
+      (or (lit? a) (vector? a)) [nil 1 false]
+      :else [nil 1 true])))
+
+(defn- tag-classes
+  "The classes in a tag keyword, joined as hammer.dom/parse-tag does."
+  [tag]
+  (let [[_ _ more] (re-matches #"([^.#]+)(.*)" (name tag))
+        cls (seq (map second (re-seq #"\.([^.#]+)" (or more ""))))]
+    (when cls (str/join " " cls))))
+
+(defn- static-class? [x] (or (lit? x) (and (vector? x) (every? lit? x))))
+
+(defn- static-style? [x]
+  (or (nil? x) (and (map? x) (every? keyword? (keys x)) (every? lit? (vals x)))))
+
+(defn- hole!
+  "Binds expr to a fresh local, in source order; returns the local."
+  [ctx expr]
+  (let [s (gensym "h")]
+    (vswap! (:binds ctx) conj s expr)
+    s))
+
+(defn- analyze
+  "Element v at path (child indices from the template root) →
+  {:skel static hiccup, :plain the same hiccup with hole locals,
+   :holes [{:kind :name :path :sym}] in post-order (kids before their
+   element's attrs)}, or nil if v's attrs are not literal. Maybe-attrs
+  locals are added to (:checks ctx)."
+  [ctx v path]
+  (when-let [[attrs start maybe?] (attrs-at v)]
+    (let [tag (first v)
+          plain-attrs (volatile! {})
+          [static ahs]
+          (reduce-kv
+           (fn [[st hs] k x]
+             (let [n (name k)
+                   hole (fn [kind nm]
+                          (let [h (hole! ctx x)]
+                            (vswap! plain-attrs assoc k h)
+                            [st (conj hs {:kind kind :name nm :path path :sym h})]))]
+               (vswap! plain-attrs assoc k x)
+               (cond
+                 (= k :ref) (if (nil? x) [st hs] (hole 7 nil))
+                 (str/starts-with? n "on-") (if (nil? x) [st hs] (hole 6 (subs n 3)))
+                 (#{:value :checked :selected} k) (hole 5 n)
+                 (= k :class) (if (static-class? x) [(assoc st k x) hs] (hole 3 (tag-classes tag)))
+                 (= k :style) (if (static-style? x) [(assoc st k x) hs] (hole 4 nil))
+                 (lit? x) [(assoc st k x) hs]
+                 :else (hole 2 n))))
+           [{} []]
+           (or attrs {}))
+          kids (vec (remove #(or (nil? %) (false? %)) (subvec v start)))
+          [skids pkids khs]
+          (reduce (fn [[sk pk hs] c]
+                    (let [p (conj path (count sk))
+                          sub (when (el? c) (analyze ctx c p))]
+                      (cond
+                        (lit? c) [(conj sk c) (conj pk c) hs]
+                        sub [(conj sk (:skel sub)) (conj pk (:plain sub)) (into hs (:holes sub))]
+                        :else (let [h (hole! ctx (compile-pos ctx c))]
+                                (when (and maybe? (empty? sk)) (vswap! (:checks ctx) conj h))
+                                [(conj sk "") (conj pk h) (conj hs {:kind 0 :path p :sym h})]))))
+                  [[] [] []]
+                  kids)
+          sole? (and (= [""] skids) (= 1 (count khs)) (= 0 (:kind (first khs))))
+          khs (if sole? [(assoc (first khs) :kind 1 :path path)] khs)]
+      {:skel (into [tag static] skids)
+       :plain (into (if attrs [tag @plain-attrs] [tag]) pkids)
+       :holes (into khs ahs)})))
+
+(defn- compare-paths
+  "Document order; a parent before its children."
+  [a b]
+  (loop [a (seq a) b (seq b)]
+    (cond
+      (and (nil? a) (nil? b)) 0
+      (nil? a) -1
+      (nil? b) 1
+      :else (let [c (compare (first a) (first b))]
+              (if (zero? c) (recur (next a) (next b)) c)))))
+
+(defn- resolver
+  "fn of a clone's root returning the node at each path: straight-line
+  firstChild/nextSibling steps, each node visited at most once."
+  [paths]
+  (let [need (into (sorted-set-by compare-paths)
+                   (for [p paths
+                         n (range 1 (inc (count p)))
+                         :let [q (subvec p 0 n)]
+                         i (range (inc (peek q)))]
+                     (conj (pop q) i)))
+        root (gensym "n")
+        syms (reduce #(assoc %1 %2 (gensym "n")) {[] root} need)
+        js (fn [p] (with-meta (syms p) {:tag 'js}))
+        binds (mapcat (fn [p]
+                        [(syms p)
+                         (if (zero? (peek p))
+                           `(.-firstChild ~(js (pop p)))
+                           `(.-nextSibling ~(js (conj (pop p) (dec (peek p))))))])
+                      need)]
+    `(fn [~root] (let [~@binds] (cljs.core/array ~@(map syms paths))))))
+
+(defn- strip-meta [form]
+  (walk/postwalk #(if (instance? clojure.lang.IObj %) (with-meta % nil) %) form))
+
+(defn- compile-el
+  "Template VNode expression for literal element v, registering the template
+  in (:defs ctx); plain hiccup (children still compiled) if v's attrs are not
+  literal."
+  [ctx v]
+  (let [ctx (assoc ctx :binds (volatile! []) :checks (volatile! []))]
+    (if-let [{:keys [skel plain holes]} (analyze ctx v [])]
+      (let [defs (:defs ctx)
+            d (symbol (str (:cname ctx) "__tpl" (count @defs)))
+            k (:key (meta v))
+            tpl `(new hammer.dom/VNode :tpl ~d nil (cljs.core/array ~@(map :sym holes))
+                      nil ~k nil nil nil nil)]
+        (swap! defs conj {:sym d
+                          :skel (strip-meta skel)
+                          :kinds (mapv :kind holes)
+                          :names (mapv :name holes)
+                          :resolve (resolver (mapv :path holes))})
+        `(let [~@@(:binds ctx)]
+           ~(if-let [cs (seq @(:checks ctx))]
+              `(if (or ~@(map (fn [c] `(map? ~c)) cs))
+                 ~(if (some? k) `(with-meta ~plain {:key ~k}) plain)
+                 ~tpl)
+              tpl)))
+      (with-meta (into [(first v)] (map #(compile-pos ctx %)) (rest v)) (meta v)))))
+
 (defmacro defc
   "(defc name [props*] [bindings*] body+)
   A vector-literal init is a db path; an init that evaluates to an atom is
   local state; anything else is derived from the props and earlier bindings
-  it names, and re-runs only when one of them changed."
+  it names, and re-runs only when one of them changed. Literal hiccup in the
+  body compiles to cloned templates (see compile-pos)."
   [cname props bindings & body]
   (let [pairs (partition 2 bindings)
         slots (into (vec props) (map first pairs))]
@@ -28,12 +212,20 @@
       (throw (ex-info "defc: props and binding names must be plain symbols" {:name cname})))
     (when-not (= (count slots) (count (set slots)))
       (throw (ex-info "defc: duplicate prop or binding name" {:name cname :slots slots})))
-    `(def ~cname
-       (hammer.cells/component
-        ~(str cname)
-        ~(count props)
-        ~(vec (map-indexed (fn [j pair]
-                             (binding-spec (subvec slots 0 (+ (count props) j)) pair))
-                           pairs))
-        ~(deps-of slots (vec body))
-        (fn ~slots ~@body)))))
+    (let [defs (atom [])
+          out (if (seq body)
+                (conj (vec (butlast body)) (compile-pos {:cname cname :defs defs} (last body)))
+                [])]
+      `(do
+         ~@(for [{:keys [sym skel kinds names resolve]} @defs]
+             `(def ~(vary-meta sym assoc :private true)
+                (hammer.dom/template ~skel (cljs.core/array ~@kinds) (cljs.core/array ~@names) ~resolve)))
+         (def ~cname
+           (hammer.cells/component
+            ~(str cname)
+            ~(count props)
+            ~(vec (map-indexed (fn [j pair]
+                                 (binding-spec (subvec slots 0 (+ (count props) j)) pair))
+                               pairs))
+            ~(deps-of slots (vec body))
+            (fn ~slots ~@out)))))))
