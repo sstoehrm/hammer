@@ -545,8 +545,14 @@
                   (recur (dec i) k))))))))))
 
 (defn- patch-kids! [^js el ^js old ^js nu depth end]
-  (if (zero? (alength nu))
+  (cond
+    (zero? (alength nu))
     (when (pos? (alength old)) (clear-kids! el old end))
+
+    (zero? (alength old)) ; nothing to match: skip building the key index
+    (insert-from! el nu 0 (alength nu) end depth)
+
+    :else
     (let [m (key-index nu)
           k (.-__keyed old)]
       (if (and m (if (nil? k) (key-index old) k))

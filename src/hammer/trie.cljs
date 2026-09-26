@@ -76,8 +76,9 @@
 (defn- each-child!
   "Calls (f child) for every child node; the child's key is (.-key child)."
   [^Node n f]
-  (when-let [^js m (.-prim n)] (.forEach m (fn [c] (f c))))
-  (when-let [^js m (.-kws n)] (.forEach m (fn [c] (f c))))
+  ;; f is a 1-arity cljs fn: the extra forEach args are ignored
+  (when-let [^js m (.-prim n)] (.forEach m f))
+  (when-let [^js m (.-kws n)] (.forEach m f))
   (when-let [m (.-other n)] (reduce-kv (fn [_ _ c] (f c)) nil m)))
 
 (defn child-keys
@@ -100,7 +101,7 @@
       (let [^Node n n]
         (set! (.-refs n) (inc (.-refs n)))
         (if (< i len)
-          (let [k (nth p i)]
+          (let [k (-nth ^not-native p i)]
             (recur (or (child n k) (add-child! n k)) (inc i)))
           n)))))
 
@@ -110,7 +111,7 @@
   [^Node n p i len]
   (set! (.-refs n) (dec (.-refs n)))
   (if (< i len)
-    (let [k (nth p i)]
+    (let [k (-nth ^not-native p i)]
       (when-let [c (child n k)]
         (let [leaf (release! c p (inc i) len)]
           (when (zero? (.-refs ^Node c)) (remove-child! n k))
