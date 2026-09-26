@@ -247,3 +247,86 @@
       (is (= after-good (.-refs state/paths)))
       (is (= "<p>1</p>" (.-innerHTML el)))
       (is (pos? (count @logs))))))
+
+(def row-log (atom []))
+(defc row [id] [todo [:todos id]]
+  [:li {:ref #(swap! row-log conj (when % [(.-textContent %) (.-isConnected %)]))} (:title todo)])
+(defc rows [] [ids [:ids]] [:ul (for [id ids] ^{:key id} [row id])])
+
+(defn- todos [& ids] (into {} (map (fn [i] [i {:title (str "t" i)}])) ids))
+
+(deftest clear-to-empty-unmounts-every-row
+  (reset! state/app-db {:ids [1 2 3] :todos (todos 1 2 3)})
+  (reset! row-log [])
+  (let [el (container)
+        before (.-refs state/paths)]
+    (dom/mount! [rows] el)
+    (is (= [["t1" true] ["t2" true] ["t3" true]] @row-log))
+    (is (= (+ before 4) (.-refs state/paths)))
+    (reset! row-log [])
+    (t/reset-renders! row)
+    (events/dispatch-sync [:set :ids []])
+    (is (= "<ul></ul>" (.-innerHTML el)))
+    (is (= [nil nil nil] @row-log))
+    (is (= (+ before 1) (.-refs state/paths)))
+    (events/dispatch-sync [:retitle 1 "z"])
+    (is (= 0 (t/renders row)))
+    (events/dispatch-sync [:set :ids [2]])
+    (is (= "<ul><li>t2</li></ul>" (.-innerHTML el)))))
+
+(deftest clear-to-empty-index-diff
+  (reset! state/app-db {:xs [1 2 3]})
+  (let [el (container)]
+    (dom/mount! [dup] el)
+    (events/dispatch-sync [:set :xs []])
+    (is (= "<ul></ul>" (.-innerHTML el)))
+    (events/dispatch-sync [:set :xs [4 5]])
+    (is (= "<ul><li>4</li><li>5</li></ul>" (.-innerHTML el)))))
+
+(deftest full-keyed-replace-recreates-all-rows
+  (reset! state/app-db {:ids [1 2 3] :todos (todos 1 2 3 4 5 6 7)})
+  (reset! row-log [])
+  (let [el (container)
+        before (.-refs state/paths)]
+    (dom/mount! [rows] el)
+    (let [old-lis (kids (.-firstChild el))]
+      (reset! row-log [])
+      (t/reset-renders! row)
+      (events/dispatch-sync [:set :ids [4 5 6 7]])
+      (is (= "<ul><li>t4</li><li>t5</li><li>t6</li><li>t7</li></ul>" (.-innerHTML el)))
+      (is (= [nil nil nil ["t4" true] ["t5" true] ["t6" true] ["t7" true]] @row-log))
+      (is (= 4 (t/renders row)))
+      (is (= (+ before 5) (.-refs state/paths)))
+      (is (not-any? (set old-lis) (kids (.-firstChild el))))
+      (t/reset-renders! row)
+      (events/dispatch-sync [:retitle 1 "z"])
+      (is (= 0 (t/renders row)))
+      (events/dispatch-sync [:retitle 5 "five"])
+      (is (= 1 (t/renders row)))
+      (is (= "<ul><li>t4</li><li>five</li><li>t6</li><li>t7</li></ul>" (.-innerHTML el))))))
+
+(deftest keyed-append-tail-keeps-existing-rows
+  (reset! state/app-db {:ids [1 2] :todos (todos 1 2 3 4 5)})
+  (reset! row-log [])
+  (let [el (container)]
+    (dom/mount! [rows] el)
+    (let [[a b] (kids (.-firstChild el))]
+      (reset! row-log [])
+      (t/reset-renders! row)
+      (events/dispatch-sync [:set :ids [2 1 3 4 5]])
+      (is (= "<ul><li>t2</li><li>t1</li><li>t3</li><li>t4</li><li>t5</li></ul>" (.-innerHTML el)))
+      (is (= [b a] (take 2 (kids (.-firstChild el)))))
+      (is (= 3 (t/renders row)))
+      (is (= [["t3" true] ["t4" true] ["t5" true]] @row-log)))))
+
+(deftest indexed-append-tail-from-empty
+  (reset! state/app-db {:xs []})
+  (let [el (container)]
+    (dom/mount! [dup] el)
+    (is (= "<ul></ul>" (.-innerHTML el)))
+    (events/dispatch-sync [:set :xs [1 2 3]])
+    (is (= "<ul><li>1</li><li>2</li><li>3</li></ul>" (.-innerHTML el)))
+    (let [[l1] (kids (.-firstChild el))]
+      (events/dispatch-sync [:set :xs [1 2 3 4]])
+      (is (identical? l1 (first (kids (.-firstChild el)))))
+      (is (= "<ul><li>1</li><li>2</li><li>3</li><li>4</li></ul>" (.-innerHTML el))))))
