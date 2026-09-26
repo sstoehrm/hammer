@@ -1,0 +1,70 @@
+---
+name: hammer-internals
+description: Use when reading, modifying, debugging, or building apps with the hammer ClojureScript UI framework (src/hammer) — components re-rendering too often or not at all, defc binding kinds (path, atom, derived), event handlers and effects, render order, keyed lists, or changing dom/cells/trie/scheduler code.
+---
+
+# hammer internals
+
+## Overview
+
+re-frame-style events without React or subscriptions. Components name the db paths
+they read. A path trie marks only the instances whose paths changed. Each instance
+diffs only its own hiccup, and child components are diff boundaries. The public API
+and an example are in `README.md`; this skill covers what only the source shows.
+
+## Files
+
+| File | Responsibility |
+|---|---|
+| `core.clj` | `defc` macro: classifies bindings, computes deps by symbol name |
+| `core.cljs` | public API re-exports, `mount!` (2-arity keeps db) |
+| `events.cljs` | handler/fx registry, microtask queue, `set-db!`, effect processing |
+| `trie.cljs` | path subscriptions; `notify!` walks only changed branches |
+| `cells.cljs` | `Instance` slots: `create`, `set-props!`, `refresh!`, `render`, `destroy!` |
+| `scheduler.cljs` | dirty set, one `requestAnimationFrame` flush, sorted by depth |
+| `dom.cljs` | hiccup → VNode, create/patch/unmount, attrs, keyed diff, roots |
+| `state.cljs` | `app-db` atom and root trie node |
+| `testing.cljs` | sync `flush!`, render counters, `reset-app!` |
+
+## Update pipeline
+
+1. `dispatch` queues the event, and `drain!` runs in a microtask. `dispatch-sync` processes now and then `sched/flush!`, and throws if called inside a handler. Its `:dispatch` effect is still queued, so that event renders later.
+2. `process!` calls `(apply handler @app-db (rest ev))` (the args, without the event id). `nil` is ignored. With an effect map it applies `:db` → `set-db!`, then `:dispatch` (one event), then every other key through `run-fx!`.
+3. `set-db!` → `trie/notify!`: marks the cells at each visited node and descends into child `k` only when `(get old k)` is not `identical?` to `(get new k)`. So `[:todos]` fires on any todo change, `[:todos 1]` only when that entry changes, and `[]` on every change. This relies on structural sharing.
+4. `cells/mark!` sets the slot's stale flag → `sched/schedule!` queues the instance once → one rAF.
+5. `flush!` sorts the dirty instances by depth (parents first; ties keep schedule order) and runs the runner (`dom/update-inst!`) on those still dirty. Anything marked during the flush waits for the next frame.
+6. `refresh!` recomputes stale slots in binding order. A prop, path or derived slot counts as changed only if its new value is not `=` to the old one. A marked `:local` slot always counts as changed, so its dependents recompute and the body renders. If nothing changed, there is no render.
+7. On a change, the body renders → `normalize` → `patch!` against the instance's own previous vnode.
+8. A child `:comp` vnode is a boundary. The child instance is reused, `set-props!` compares args with `=`, and on a change `update-inst!` runs on the child immediately. That clears the child's dirty flag, so the flush skips it (one render per frame).
+
+## defc binding kinds
+
+| Init form | Kind | Decided | Recomputed when |
+|---|---|---|---|
+| positional prop | `:prop` | — | parent passes a non-`=` arg |
+| vector literal `[:a id]` | `:path` | macro time | path's deps change (re-registers in the trie) or the trie marks it |
+| evaluates to an `IWatchable` | `:local` | runtime, at `create` | never re-run; watch marks when the value is no longer `identical?` |
+| anything else | `:derived` | runtime, at `create` | a named dep (prop or earlier binding) changed |
+
+Deps are the slot symbols that appear anywhere in the init form (by name, so a shadowing
+`let` counts too). A derived binding never tracks `app-db` or `@global`. Read the db
+through a path binding; bind a global atom itself (`g some-atom`) to get a watched `:local`.
+
+## Gotchas
+
+| Symptom | Cause |
+|---|---|
+| Child re-renders on every parent render | inline `fn` prop is never `=`; pass an event vector or bind the fn in the parent |
+| `(atom x)` ignores new `x` | the init runs once per instance; remount via a `^{:key}` change in a fully keyed list |
+| `(vector a b)` vs `[a b]` | the literal is a path; the call is a value |
+| "no fx registered for :k — did the handler return db" (logged, no throw) | handler returned `db`: `:db` is never set, every top-level key runs as an fx (a key matching a registered fx **runs it**), and a `:dispatch` key gets dispatched |
+| List items keep the wrong DOM | keyed diff needs **every** kid keyed, with unique keys; otherwise index diff (+ warn) |
+| Input value "fights" typing | `:value/:checked/:selected` are compared to the live element, so the db must hold the current value |
+| `:ref` gets `nil` | called with `nil` on unmount; refs run after insertion into the document |
+| Throw doesn't crash the app | binding init → nil slot; body throw → old DOM kept; the runner catches per instance. Check the console for `hammer:` |
+
+## Testing
+
+Use `hammer.testing/flush!` (drain + flush, max 10 rounds) instead of waiting for
+rAF. Use `renders`/`reset-renders!` to assert which components re-rendered and
+`reset-app!` as a `:before` fixture. Run with `npm test`; `bb loc` must stay ≤ 800.
