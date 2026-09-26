@@ -45,6 +45,35 @@
       (is (= "<ul><li>c</li><li>a</li></ul>" (.-innerHTML el)))
       (is (= 0 (t/renders item))))))
 
+(defc kitem [k] [] [:li (pr-str k)])
+(defc kitems [] [ks [:ks]] [:ul (for [k ks] ^{:key k} [kitem k])])
+
+(deftest keyed-diff-keeps-value-semantics-for-keys
+  (let [el (container)
+        warns (atom 0)
+        orig js/console.warn]
+    (set! js/console.warn (fn [& _] (swap! warns inc)))
+    (try
+      (reset! state/app-db {:ks [1 "1" 2]})
+      (dom/mount! [kitems] el)
+      (let [[one one-s two] (kids (.-firstChild el))]
+        (is (= 0 @warns) "1 and \"1\" are different keys")
+        (events/dispatch-sync [:set :ks ["1" 2 1.0]])
+        (is (= [one-s two one] (kids (.-firstChild el))) "moved, not recreated"))
+      (events/dispatch-sync [:set :ks [:a (keyword "b") 3]])
+      (let [[a b three] (kids (.-firstChild el))]
+        (events/dispatch-sync [:set :ks [3 (keyword "a") :b]])
+        (is (= [three a b] (kids (.-firstChild el))) "runtime keywords match literal ones")
+        (is (= "<ul><li>3</li><li>:a</li><li>:b</li></ul>" (.-innerHTML el))))
+      (events/dispatch-sync [:set :ks [[:v 1] "x"]])
+      (let [[v x] (kids (.-firstChild el))]
+        (events/dispatch-sync [:set :ks ["x" [:v (inc 0)]]])
+        (is (= [x v] (kids (.-firstChild el))) "vector keys by value"))
+      (is (= 0 @warns))
+      (events/dispatch-sync [:set :ks [1 1.0]])
+      (is (= 1 @warns) "1 and 1.0 are duplicates")
+      (finally (set! js/console.warn orig)))))
+
 (defc label [s] [] [:span s])
 (defc pair [] [a [:a] b [:b]] [:div [label a] [label b]])
 

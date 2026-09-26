@@ -419,23 +419,43 @@
           (set! (.-vnode inst) v)
           (patch! old v (.-depth inst)))))))
 
+(defn- js-key? [k] (or (number? k) (string? k)))
+
 (defn- key-index
   "key → index when every kid is keyed and keys are unique, else nil (warns on
-  a duplicate). The verdict is kept on the array, so when these kids become the
-  old side of the next patch they are not checked again."
+  a duplicate): a js/Map when every key is a number or string (the same
+  value semantics as =), else a persistent map. The verdict is kept on the
+  array, so when these kids become the old side of the next patch they are
+  not checked again."
   [^js kids]
   (let [n (alength kids)
-        m (when (and (pos? n) (some? (.-key ^VNode (aget kids 0))))
-            (loop [i 0 m (transient {})]
-              (if (< i n)
-                (let [k (.-key ^VNode (aget kids i))]
-                  (cond
-                    (nil? k) nil
-                    (contains? m k) (js/console.warn "hammer: duplicate keys, falling back to index diff")
-                    :else (recur (inc i) (assoc! m k i))))
-                m)))]
+        key-at (fn [i] (.-key ^VNode (aget kids i)))
+        dup (fn [] (js/console.warn "hammer: duplicate keys, falling back to index diff"))
+        m (when (and (pos? n) (some? (key-at 0)))
+            (if (loop [i 0] (or (== i n) (and (js-key? (key-at i)) (recur (inc i)))))
+              (let [m (js/Map.)]
+                (loop [i 0]
+                  (if (< i n)
+                    (let [k (key-at i)]
+                      (if (.has m k) (dup) (do (.set m k i) (recur (inc i)))))
+                    m)))
+              (loop [i 0 m (transient {})]
+                (if (< i n)
+                  (let [k (key-at i)]
+                    (cond
+                      (nil? k) nil
+                      (contains? m k) (dup)
+                      :else (recur (inc i) (assoc! m k i))))
+                  m))))]
     (set! (.-__keyed kids) (some? m))
     m))
+
+(defn- index-of
+  "The new index of key k in key-index m, or nil."
+  [m k]
+  (if (instance? js/Map m)
+    (let [i (.get ^js m k)] (when-not (undefined? i) i))
+    (get m k)))
 
 ;; The kids functions below take end: the node after the kids in el, or nil
 ;; when they are all of el's child nodes (an :el, or a template's sole kid).
@@ -496,7 +516,7 @@
       (= s oe) ; nothing old left in the middle: insert the new middle at once
       (insert-from! el nu s ne (if (< ne nn) (node-of (aget nu ne)) end) depth)
 
-      (and (zero? s) (zero? t) (not (.some old (fn [^VNode o] (some? (get m (.-key o)))))))
+      (and (zero? s) (zero? t) (not (.some old (fn [^VNode o] (some? (index-of m (.-key o)))))))
       (do (clear-kids! el old end) ; no key survives: rebuild
           (insert-from! el nu 0 nn end depth))
 
@@ -505,7 +525,7 @@
         (loop [j s]
           (when (< j (- no t))
             (let [o (aget old j)]
-              (if-let [i (get m (.-key ^VNode o))]
+              (if-let [i (index-of m (.-key ^VNode o))]
                 (aset src (- i s) (inc j))
                 (do (.removeChild el (node-of o))
                     (unmount! o))))
