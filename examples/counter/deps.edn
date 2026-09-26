@@ -1,0 +1,6 @@
+{:paths ["src" "resources" "target"]
+ :deps {org.clojure/clojurescript {:mvn/version "1.12.145"}
+        com.bhauman/figwheel-main {:mvn/version "0.2.20"}
+        io.github.sstoehrm/hammer {:local/root "../.."}}
+ :aliases {:dev {:main-opts ["-m" "figwheel.main" "-b" "dev" "-r"]}
+           :build {:main-opts ["-m" "figwheel.main" "-O" "advanced" "-bo" "dev"]}}}

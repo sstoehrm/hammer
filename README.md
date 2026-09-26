@@ -63,3 +63,6 @@ running app already has, instead of resetting it.
 ## Develop
 
 `npm install`, `npm test`, `npx shadow-cljs watch todomvc` → http://localhost:8280
+
+Without shadow-cljs: `examples/counter` uses `deps.edn` and figwheel-main, with hammer
+as a `:local/root` dep (`cd examples/counter && clj -M:dev` → http://localhost:9500).
