@@ -247,3 +247,19 @@
       (is (= after-good (.-refs state/paths)))
       (is (= "<p>1</p>" (.-innerHTML el)))
       (is (pos? (count @logs))))))
+
+(defc lone-text [] [t [:t]] [:p {:class (when (seq t) "has")} t])
+
+(deftest single-text-kid-patches-in-place
+  (reset! state/app-db {:t "a"})
+  (let [el (container)]
+    (dom/mount! [lone-text] el)
+    (let [p (.-firstChild el) txt (.-firstChild p)]
+      (is (= "<p class=\"has\">a</p>" (.-innerHTML el)))
+      (events/dispatch-sync [:set :t "b"])
+      (is (identical? txt (.-firstChild p)) "the text node set via textContent is patched in place")
+      (is (= "<p class=\"has\">b</p>" (.-innerHTML el)))
+      (events/dispatch-sync [:set :t ""])
+      (is (= "<p></p>" (.-innerHTML el)))
+      (events/dispatch-sync [:set :t "c"])
+      (is (= "<p class=\"has\">c</p>" (.-innerHTML el))))))

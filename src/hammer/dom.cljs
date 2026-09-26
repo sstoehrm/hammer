@@ -94,6 +94,7 @@
         (when (not= v (gobj/get el n)) (gobj/set el n v)))
 
       (or (nil? v) (false? v)) (.removeAttribute el n)
+      (= k :class) (set! (.-className el) (str v))
       (true? v) (.setAttribute el n "")
       :else (.setAttribute el n (str v)))))
 
@@ -141,8 +142,13 @@
             (set! (.-el v) n)
             n)
     :el (let [el (.createElement js/document (.-tag v))
-              attrs (.-attrs v)]
-          (.forEach (.-kids v) (fn [k] (.appendChild el (create! k depth))))
+              attrs (.-attrs v)
+              ^js kids (.-kids v)
+              ^VNode k0 (aget kids 0)]
+          (if (and (== 1 (alength kids)) (keyword-identical? :text (.-t k0)) (not= "" (.-text k0)))
+            (do (set! (.-textContent el) (.-text k0)) ; one text kid: no separate text node call
+                (set! (.-el k0) (.-firstChild el)))
+            (.forEach kids (fn [k] (.appendChild el (create! k depth)))))
           (set-attrs! el nil attrs)
           (when-let [r (:ref attrs)] (.push ref-queue #js [r el]))
           (set! (.-el v) el)
