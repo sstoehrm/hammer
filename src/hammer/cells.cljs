@@ -5,15 +5,16 @@
             [hammer.trie :as trie]
             [hammer.scheduler :as sched]))
 
-(deftype Comp [cname nprops specs body ^:mutable renders])
+(deftype Comp [cname nprops specs body-deps body ^:mutable renders])
 (deftype Cell [inst i])
 (deftype Instance [comp depth ^:mutable dirty ^:mutable mounted ^:mutable vnode
                    vals stale kinds paths cells])
 
 (defn component
-  "Built by defc. specs: one {:kind :path|:expr, :deps [slot], :f fn} per binding."
-  [cname nprops specs body]
-  (Comp. cname nprops (to-array specs) body 0))
+  "Built by defc. specs: one {:kind :path|:expr, :deps [slot], :f fn} per binding;
+  body-deps: the slots the body names."
+  [cname nprops specs body-deps body]
+  (Comp. cname nprops (to-array specs) body-deps body 0))
 
 (defn component? [x] (instance? Comp x))
 
@@ -101,7 +102,8 @@
       (aset changed i true))))
 
 (defn refresh!
-  "Recomputes stale slots in binding order. Returns true if any slot changed."
+  "Recomputes stale slots in binding order. Returns true if a slot the body
+  names changed; the others only feed later bindings."
   [^Instance inst]
   (let [^Comp c (.-comp inst)
         np (.-nprops c)
@@ -135,7 +137,7 @@
           (when dep-changed?
             (change! vals changed i (apply f (dep-vals vals deps)))))))
     (.fill stale false)
-    (boolean (some true? changed))))
+    (boolean (some #(aget changed %) (.-body-deps c)))))
 
 (defn render
   "Calls the component body with the current slot values."

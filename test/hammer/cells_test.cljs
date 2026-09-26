@@ -23,6 +23,7 @@
     {:kind :expr :deps [1 2] :f (fn [todo edit]
                                   (swap! runs inc)
                                   (str (:title todo) (when @edit "*")))}]
+   [3]
    (fn [_id _todo _edit label] [:li label])))
 
 (deftest create-evaluates-bindings

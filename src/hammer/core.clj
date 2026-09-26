@@ -1,13 +1,15 @@
 (ns hammer.core)
 
-(defn- symbols [form]
-  (set (filter symbol? (tree-seq coll? seq form))))
+(defn- deps-of
+  "Indices of the slots named anywhere in form (metadata included)."
+  [slots form]
+  (let [used (set (filter symbol? (tree-seq coll? #(concat (seq %) (meta %)) form)))]
+    (vec (keep-indexed (fn [i s] (when (used s) i)) slots))))
 
 (defn- binding-spec
   "slots: props and earlier binding names visible to this init."
   [slots [_ init]]
-  (let [used (symbols init)
-        deps (vec (keep-indexed (fn [i s] (when (used s) i)) slots))]
+  (let [deps (deps-of slots init)]
     `{:kind ~(if (vector? init) :path :expr)
       :deps ~deps
       :f (fn ~(mapv slots deps) ~init)}))
@@ -33,4 +35,5 @@
         ~(vec (map-indexed (fn [j pair]
                              (binding-spec (subvec slots 0 (+ (count props) j)) pair))
                            pairs))
+        ~(deps-of slots (vec body))
         (fn ~slots ~@body)))))

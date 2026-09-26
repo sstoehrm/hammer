@@ -247,3 +247,31 @@
       (is (= after-good (.-refs state/paths)))
       (is (= "<p>1</p>" (.-innerHTML el)))
       (is (pos? (count @logs))))))
+
+(defc pick [id] [sel [:selected] cls (when (= sel id) "on")] [:li {:class cls} id])
+(defc picks [] [] [:ul [pick 1] [pick 2] [pick 3]])
+
+(deftest intermediate-only-change-does-not-render
+  (reset! state/app-db {:selected 0})
+  (let [el (container)]
+    (dom/mount! [picks] el)
+    (t/reset-renders! pick)
+    (events/dispatch-sync [:set :selected 9])
+    (is (= 0 (t/renders pick)))
+    (events/dispatch-sync [:set :selected 2])
+    (is (= 1 (t/renders pick)))
+    (events/dispatch-sync [:set :selected 1])
+    (is (= 3 (t/renders pick)))
+    (is (= "<ul><li class=\"on\">1</li><li>2</li><li>3</li></ul>" (.-innerHTML el)))))
+
+(defc quiet [_a b] [] [:span b])
+(defc loud [] [a [:a]] [:div [quiet a "b"]])
+
+(deftest unreferenced-prop-change-does-not-render
+  (reset! state/app-db {:a 1})
+  (let [el (container)]
+    (dom/mount! [loud] el)
+    (t/reset-renders! quiet loud)
+    (events/dispatch-sync [:set :a 2])
+    (is (= 1 (t/renders loud)))
+    (is (= 0 (t/renders quiet)))))

@@ -33,7 +33,7 @@ and an example are in `README.md`; this skill covers what only the source shows.
 3. `set-db!` → `trie/notify!`: marks the cells at each visited node and descends into child `k` only when `(get old k)` is not `identical?` to `(get new k)`. So `[:todos]` fires on any todo change, `[:todos 1]` only when that entry changes, and `[]` on every change. This relies on structural sharing.
 4. `cells/mark!` sets the slot's stale flag → `sched/schedule!` queues the instance once → one `queueMicrotask` flush, after the event drain (also a microtask) so a batch of events renders once, before paint.
 5. `flush!` sorts the dirty instances by depth (parents first; ties keep schedule order) and runs the runner (`dom/update-inst!`) on those still dirty. Anything marked during the flush runs in a follow-up microtask.
-6. `refresh!` recomputes stale slots in binding order. A prop, path or derived slot counts as changed only if its new value is not `=` to the old one. A marked `:local` slot always counts as changed, so its dependents recompute and the body renders. If nothing changed, there is no render.
+6. `refresh!` recomputes stale slots in binding order. A prop, path or derived slot counts as changed only if its new value is not `=` to the old one. A marked `:local` slot always counts as changed, so its dependents recompute. The body renders only if a slot it names (by symbol, as for deps) changed; a slot that only feeds later bindings, or a prop the body never names, recomputes without a render.
 7. On a change, the body renders → `normalize` → `patch!` against the instance's own previous vnode.
 8. A child `:comp` vnode is a boundary. The child instance is reused, `set-props!` compares args with `=`, and on a change `update-inst!` runs on the child immediately. That clears the child's dirty flag, so the flush skips it (one render per flush).
 
@@ -61,6 +61,7 @@ through a path binding; bind a global atom itself (`g some-atom`) to get a watch
 | List items keep the wrong DOM | keyed diff needs **every** kid keyed, with unique keys; otherwise index diff (+ warn) |
 | Input value "fights" typing | `:value/:checked/:selected` are compared to the live element, so the db must hold the current value |
 | `:ref` gets `nil` | called with `nil` on unmount; refs run after insertion into the document |
+| Body shows stale global/db state | the body re-runs only when a slot it names changes; a raw `@global` or `@app-db` in the body never triggers one. Bind it as a slot |
 | Throw doesn't crash the app | binding init → nil slot; body throw → old DOM kept; the runner catches per instance. Check the console for `hammer:` |
 
 ## Testing
