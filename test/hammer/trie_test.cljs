@@ -29,7 +29,8 @@
     (trie/register! root [:other] :other)
     (is (= 2 (trie/notify! root db (assoc db :other 2) (fn [_]))))
     (let [seen (atom [])]
-      (is (= 1002 (trie/notify! root db (assoc-in db [:todos 7 :done] true)
+      ;; root: 2 children; [:todos]: only the changed key is visited (hash map diff)
+      (is (= 3 (trie/notify! root db (assoc-in db [:todos 7 :done] true)
                                 #(swap! seen conj %))))
       (is (= [7] @seen)))))
 
@@ -113,3 +114,34 @@
     (is (= [:l] (marks root {:a [1]} {:a [2]})))
     (trie/unregister! root (list :a 0) :l)
     (is (empty? (trie/child-keys root)))))
+
+(defn- lcg [seed]
+  (let [s (volatile! seed)]
+    (fn [n] (vswap! s #(mod (+ (* % 1103515245) 12345) 2147483648)) (mod @s n))))
+
+(deftest hash-map-diff-marks-exactly-the-changed-keys
+  ;; many children under a changed hash map take the structural diff; the
+  ;; marks must equal brute force: every registered key whose value is not identical
+  (let [rnd (lcg 7)
+        pool (vec (concat (range 300) (map str (range 100)) (map #(keyword (str "k" %)) (range 100))
+                          (map (fn [i] [:v i]) (range 50)) [nil true false 1.5 "" :a/b]))
+        pick #(nth pool (rnd (count pool)))
+        root (trie/node)
+        cells (into {} (map (fn [k] [k #js {:k k}])) pool)]
+    (doseq [k pool] (trie/register! root [k] (cells k)))
+    (dotimes [round 60]
+      (let [size (rnd 400)
+            o (if (even? round)
+                (into {} (map (fn [_] [(pick) (rnd 5)])) (range size))
+                (reduce (fn [m _] (assoc m (pick) (rnd 5))) {} (range size)))
+            v (reduce (fn [m _]
+                        (case (rnd 4)
+                          0 (dissoc m (pick))
+                          1 (assoc m (pick) (rnd 5))
+                          2 (assoc m (pick) [(rnd 3)]) ; = but never identical
+                          3 m))
+                      o (range (rnd 40)))
+            expected (set (keep (fn [k] (when-not (identical? (get o k) (get v k)) (cells k))) pool))
+            seen (atom #{})]
+        (trie/notify! root o v #(swap! seen conj %))
+        (is (= expected @seen) (str "round " round))))))

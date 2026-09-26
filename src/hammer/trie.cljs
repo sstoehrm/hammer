@@ -81,6 +81,16 @@
   (when-let [^js m (.-kws n)] (.forEach m f))
   (when-let [m (.-other n)] (reduce-kv (fn [_ _ c] (f c)) nil m)))
 
+(defn- child-count [^Node n]
+  (+ (if-let [^js m (.-prim n)] (.-size m) 0)
+     (if-let [^js m (.-kws n)] (.-size m) 0)
+     (count (.-other n))))
+
+(def ^:private diff-min
+  "Children above which notify! diffs a changed hash map instead of looking
+  up every child."
+  16)
+
 (defn child-keys
   "The keys of n's children (for tests and debugging)."
   [n]
@@ -203,6 +213,80 @@
         (when (and (nil? (.-prim x)) (nil? (.-kws x)) (nil? (.-other x)))
           (set! (.-eq l) nil))))))
 
+
+;; ---- changed keys of two hash maps
+;;
+;; Walks two PersistentHashMap tries in step (cljs.core internals: a
+;; BitmapIndexedNode's arr holds key/value pairs, or nil/sub-node pairs; an
+;; ArrayNode holds 32 sub-nodes) and skips identical sub-nodes, so a map
+;; that shares structure with its old version costs O(changes), not O(size).
+
+(defn- node-keys! [node f]
+  (when (some? node) (.kv-reduce ^js node (fn [_ k _] (f k) nil) nil)))
+
+(defn- inode-diff!
+  "Calls (f k) for a superset of the keys whose values are not identical
+  between inodes a and b (a key may come twice)."
+  [a b f]
+  (cond
+    (and (instance? BitmapIndexedNode a) (instance? BitmapIndexedNode b))
+    (let [ba (.-bitmap ^js a) bb (.-bitmap ^js b)
+          xa (.-arr ^js a) xb (.-arr ^js b)]
+      (loop [bits (bit-or ba bb)]
+        (when-not (zero? bits)
+          (let [bit (bit-and bits (- bits))
+                ia (when-not (zero? (bit-and ba bit)) (* 2 (bit-count (bit-and ba (dec bit)))))
+                ib (when-not (zero? (bit-and bb bit)) (* 2 (bit-count (bit-and bb (dec bit)))))
+                ka (when ia (aget xa ia))
+                va (when ia (aget xa (inc ia)))
+                kb (when ib (aget xb ib))
+                vb (when ib (aget xb (inc ib)))]
+            (cond
+              (identical? va vb) nil ; same sub-node, or same value of the same key
+              (and ia ib (nil? ka) (nil? kb)) (inode-diff! va vb f)
+              (and ia ib (some? ka) (= ka kb)) (f ka)
+              :else (do (when ia (if (nil? ka) (node-keys! va f) (f ka)))
+                        (when ib (if (nil? kb) (node-keys! vb f) (f kb)))))
+            (recur (bit-xor bits bit))))))
+
+    (and (instance? ArrayNode a) (instance? ArrayNode b))
+    (let [xa (.-arr ^js a) xb (.-arr ^js b)]
+      (dotimes [i 32]
+        (let [x (aget xa i) y (aget xb i)]
+          (when-not (identical? x y)
+            (if (and (some? x) (some? y))
+              (inode-diff! x y f)
+              (do (node-keys! x f) (node-keys! y f)))))))
+
+    :else (do (node-keys! a f) (node-keys! b f))))
+
+(defn- mostly-changed?
+  "Samples up to 8 children of n: true if most of their values changed, as
+  when a map is replaced wholesale (then looking up every child is cheaper
+  than diffing)."
+  [^Node n o v]
+  (if-let [^js m (or (.-prim n) (.-kws n))]
+    (let [it (.values m)]
+      (loop [i 0 ch 0]
+        (let [r (.next it)]
+          (if (or (.-done r) (== i 8))
+            (> (* 2 ch) i)
+            (let [k (.-key ^Node (.-value r))]
+              (recur (inc i) (if (identical? (get o k) (get v k)) ch (inc ch))))))))
+    false))
+
+(defn- map-diff!
+  "When a and b are both non-empty PersistentHashMaps, calls (f k) for a
+  superset of the keys whose values are not identical and returns true;
+  otherwise returns nil without calling f."
+  [a b f]
+  (when (and (instance? PersistentHashMap a) (instance? PersistentHashMap b))
+    (let [ra (.-root ^js a) rb (.-root ^js b)]
+      (when (and (some? ra) (some? rb))
+        (when-not (identical? (.-nil-val ^js a) (.-nil-val ^js b)) (f nil))
+        (when-not (identical? ra rb) (inode-diff! ra rb f))
+        true))))
+
 ;; ---- notify
 
 (deftype Walk [mark ^:mutable visits])
@@ -217,12 +301,17 @@
         (when (and (or eo ev) (not (and eo ev (= o v))))
           (each-cell! eo mark)
           (each-cell! ev mark))))
-    (each-child! n (fn [^Node c]
-                     (set! (.-visits w) (inc (.-visits w)))
-                     (let [k (.-key c)
-                           co (get o k)
-                           cv (get v k)]
-                       (when-not (identical? co cv) (walk! w c co cv)))))))
+    (let [f (fn [^Node c]
+              (set! (.-visits w) (inc (.-visits w)))
+              (let [k (.-key c)
+                    co (get o k)
+                    cv (get v k)]
+                (when-not (identical? co cv) (walk! w c co cv))))]
+      ;; many children under a changed hash map: visit only the changed keys
+      (when-not (and (> (child-count n) diff-min)
+                     (not (mostly-changed? n o v))
+                     (map-diff! o v (fn [k] (when-let [c (child n k)] (f c)))))
+        (each-child! n f)))))
 
 (defn notify!
   "Calls (mark cell) for every cell whose path value is not identical?
