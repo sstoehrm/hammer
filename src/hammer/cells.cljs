@@ -75,73 +75,77 @@
       (js/console.error "hammer: render failed in" (.-cname c) e)
       failed)))
 
-(defn create
+(defn ^Instance create
   "Instantiates c with positional args. Evaluates every binding once,
   subscribes paths, watches locals. A binding whose init throws is logged
   by component name and treated as a nil, unsubscribed value; it does not
-  abort creation of this or any other instance."
-  [^Comp c args depth]
-  (let [np (.-nprops c)
-        specs (.-specs c)
-        n (+ np (alength specs))
-        vals (make-array n)
-        cells (make-array n)
-        inst (Instance. c depth false true nil vals cells nil)]
-    (dotimes [i np]
-      (aset vals i (nth args i nil)))
-    (dotimes [j (alength specs)]
-      (let [i (+ np j)
-            ^Spec spec (aget specs j)
-            kind (.-kind spec)
-            v (init c (.-f spec) vals (.-deps spec))
-            ev (if (and (.-g spec) (not (identical? v failed)))
-                 (init c (.-g spec) vals (.-deps spec))
-                 v)]
-        (cond
-          (identical? ev failed)
-          (aset vals i nil)
+  abort creation of this or any other instance. With off, the props are
+  args from index off on."
+  ([c args depth] (create c args 0 depth))
+  ([^Comp c args off depth]
+   (let [np (.-nprops c)
+         specs (.-specs c)
+         n (+ np (alength specs))
+         vals (make-array n)
+         cells (make-array n)
+         inst (Instance. c depth false true nil vals cells nil)]
+     (dotimes [i np]
+       (aset vals i (nth args (+ off i) nil)))
+     (dotimes [j (alength specs)]
+       (let [i (+ np j)
+             ^Spec spec (aget specs j)
+             kind (.-kind spec)
+             v (init c (.-f spec) vals (.-deps spec))
+             ev (if (and (.-g spec) (not (identical? v failed)))
+                  (init c (.-g spec) vals (.-deps spec))
+                  v)]
+         (cond
+           (identical? ev failed)
+           (aset vals i nil)
 
-          (keyword-identical? kind :path)
-          (let [cell (Cell. inst i 0 v nil false)]
-            (aset cells i cell)
-            (subscribe! cell)
-            (aset vals i (cell-value cell)))
+           (keyword-identical? kind :path)
+           (let [cell (Cell. inst i 0 v nil false)]
+             (aset cells i cell)
+             (subscribe! cell)
+             (aset vals i (cell-value cell)))
 
-          (keyword-identical? kind :eq)
-          (let [cell (Cell. inst i 1 v ev false)]
-            (aset cells i cell)
-            (subscribe! cell)
-            (aset vals i (cell-value cell)))
+           (keyword-identical? kind :eq)
+           (let [cell (Cell. inst i 1 v ev false)]
+             (aset cells i cell)
+             (subscribe! cell)
+             (aset vals i (cell-value cell)))
 
-          (satisfies? IWatchable v)
-          (let [cell (Cell. inst i 2 nil nil false)]
-            (aset cells i cell)
-            (add-watch v cell (fn [_ _ o nv] (when-not (identical? o nv) (mark! cell))))
-            (aset vals i v))
+           (satisfies? IWatchable v)
+           (let [cell (Cell. inst i 2 nil nil false)]
+             (aset cells i cell)
+             (add-watch v cell (fn [_ _ o nv] (when-not (identical? o nv) (mark! cell))))
+             (aset vals i v))
 
-          :else
-          (aset vals i v))))
-    inst))
+           :else
+           (aset vals i v))))
+     inst)))
 
 (defn set-props!
-  "Stores new positional args. Returns true if any arg is not = to the old one."
-  [^Instance inst args]
-  (let [vals (.-vals inst)
-        ^Comp c (.-comp inst)
-        np (.-nprops c)]
-    (loop [i 0 any? false]
-      (if (< i np)
-        (let [o (aget vals i)
-              v (nth args i nil)]
-          (cond
-            (identical? o v) (recur (inc i) any?)
-            (= o v) (do (aset vals i v) (recur (inc i) any?))
-            :else (do (aset vals i v)
-                      (aset (or (.-changed inst)
-                                (set! (.-changed inst) (make-array (alength vals))))
-                            i true)
-                      (recur (inc i) true))))
-        any?))))
+  "Stores new positional args (from index off of args). Returns true if any
+  arg is not = to the old one."
+  ([inst args] (set-props! inst args 0))
+  ([^Instance inst args off]
+   (let [vals (.-vals inst)
+         ^Comp c (.-comp inst)
+         np (.-nprops c)]
+     (loop [i 0 any? false]
+       (if (< i np)
+         (let [o (aget vals i)
+               v (nth args (+ off i) nil)]
+           (cond
+             (identical? o v) (recur (inc i) any?)
+             (= o v) (do (aset vals i v) (recur (inc i) any?))
+             :else (do (aset vals i v)
+                       (aset (or (.-changed inst)
+                                 (set! (.-changed inst) (make-array (alength vals))))
+                             i true)
+                       (recur (inc i) true))))
+         any?)))))
 
 (defn- change! [vals changed i v]
   (let [o (aget vals i)]

@@ -10,6 +10,7 @@
             [hammer.scheduler :as sched]))
 
 ;; t :text/:el/:comp, or :tpl (from defc): tag = Tpl, attrs = hole values,
+;; args (:comp) = the whole hiccup vector, props from index 1;
 ;; kids = hole nodes, inst = per-hole region vnodes (nil in text mode).
 (deftype VNode [t tag text attrs ^:mutable kids key comp args ^:mutable el ^:mutable inst])
 
@@ -61,7 +62,7 @@
     (let [h (nth x 0)
           k (:key (meta x))]
       (if (cells/component? h)
-        (VNode. :comp nil nil nil nil k h (subvec x 1) nil nil)
+        (VNode. :comp nil nil nil nil k h x nil nil)
         (let [[tag id cls] (parse-tag h)
               a? (map? (nth x 1 nil))
               attrs (if a? (nth x 1) {})
@@ -358,7 +359,7 @@
           (set! (.-el v) el)
           el)
     :tpl (create-tpl! v depth)
-    :comp (let [inst (cells/create (.-comp v) (.-args v) (inc depth))]
+    :comp (let [inst (cells/create (.-comp v) (.-args v) 1 (inc depth))]
             (set! (.-inst v) inst)
             (mount-inst! inst))))
 
@@ -547,7 +548,7 @@
       :tpl (patch-tpl! old nu depth)
       :comp (let [inst (.-inst old)]
               (set! (.-inst nu) inst)
-              (when (cells/set-props! inst (.-args nu))
+              (when (cells/set-props! inst (.-args nu) 1)
                 (update-inst! inst))))))
 
 ;; ---- roots
