@@ -26,7 +26,7 @@ template compiler. It must be token efficient in two senses:
 ## Non-goals (v1)
 
 SSR, routing, devtools, animations/transitions, lifecycle hooks beyond `:ref`,
-LIS-optimal keyed moves, coeffects, interceptors.
+coeffects, interceptors.
 
 ## Architecture
 
@@ -36,7 +36,7 @@ DOM event ─▶ dispatch ─▶ queue ─▶ handler [db & args] ─▶ effect 
                           ┌── :db ──▶ app-db reset! + trie/notify old new
                           ├── :dispatch ─▶ queue
                           └── other ─▶ reg-fx
-trie/notify ─▶ stale path cells ─▶ dirty instances ─▶ scheduler (rAF, parents first)
+trie/notify ─▶ stale path cells ─▶ dirty instances ─▶ scheduler (microtask, parents first)
   ─▶ recompute cells ─▶ changed? ─▶ render ─▶ keyed hiccup diff ─▶ DOM patch
 ```
 
@@ -167,7 +167,7 @@ from (same as Reagent form-2). This is documented behaviour.
 
 ### Scheduler
 
-- A set of dirty instances; one `requestAnimationFrame` flush.
+- A set of dirty instances; one microtask flush after the event drain.
 - Flush order: by depth, parents first. When a parent's diff passes new props
   to a child, the child is updated inline and removed from the dirty set.
 - Instances unmounted during the flush are skipped.
@@ -183,7 +183,7 @@ only dirty instances are diffed, never the whole tree.
 | Different tag or component | unmount old, mount new |
 | Same tag | patch attrs that are not `=` |
 | Children, unkeyed | diff by index |
-| Children, all keyed | reuse nodes by key, move with `insertBefore`, remove leftovers |
+| Children, all keyed | patch common prefix/suffix, match the middle by key, move only nodes outside the longest increasing subsequence |
 | Same component, all args `identical?` | skip |
 | Same component, some arg changed | set new props, recompute and render inline |
 
@@ -206,7 +206,7 @@ only dirty instances are diffed, never the whole tree.
 
 ## Testing
 
-All tests drive rendering through `cljs-ui.testing/flush!`; no real rAF timing.
+All tests drive rendering through `cljs-ui.testing/flush!`; no real microtask timing.
 Run with `npm test` (`shadow-cljs compile test && node target/test.js`; the
 node process exits non-zero on failure, shadow's `:autorun` does not).
 
