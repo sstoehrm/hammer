@@ -3,7 +3,9 @@
             [hammer.test-env]
             [hammer.state :as state]
             [hammer.events :as ev]
-            [hammer.testing :as t]))
+            [hammer.testing :as t]
+            [hammer.cells]
+            [hammer.dom]))
 
 (defn- capture-errors [f]
   (let [orig js/console.error
@@ -70,3 +72,18 @@
     (is (= "hammer: event must be a vector, got" (first (first logs))))
     (is (re-find #"\{:db db\}" (last (second logs))))
     (is (= {:n 0} @state/app-db))))
+
+(deftest dispatch-renders-before-next-task
+  (async done
+    (t/reset-app!)
+    (ev/reg-event :test/set (fn [db v] {:db (assoc db :v v)}))
+    (let [el (js/document.createElement "div")
+          view (hammer.cells/component "view" 0 [{:kind :path :deps [] :f (fn [] [:v])}] (fn [v] [:p (str v)]))]
+      (hammer.dom/mount! [view] el)
+      (ev/dispatch [:test/set 1])
+      (ev/dispatch [:test/set 2])
+      (is (= "" (.-textContent el)) "nothing renders synchronously")
+      (js/setTimeout (fn []
+                       (is (= "2" (.-textContent el)) "rendered once, within the microtasks after dispatch")
+                       (done))
+                     0))))

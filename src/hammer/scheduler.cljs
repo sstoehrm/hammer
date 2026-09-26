@@ -1,5 +1,5 @@
 (ns hammer.scheduler
-  "Dirty instances, flushed once per animation frame, parents first.")
+  "Dirty instances, flushed in one microtask after they are marked, parents first.")
 
 (deftype State [^:mutable pending ^:mutable run])
 
@@ -35,4 +35,4 @@
     (.push dirty inst)
     (when-not (.-pending st)
       (set! (.-pending st) true)
-      (js/requestAnimationFrame flush!))))
+      (js/queueMicrotask flush!))))

@@ -21,7 +21,7 @@ and an example are in `README.md`; this skill covers what only the source shows.
 | `events.cljs` | handler/fx registry, microtask queue, `set-db!`, effect processing |
 | `trie.cljs` | path subscriptions; `notify!` walks only changed branches |
 | `cells.cljs` | `Instance` slots: `create`, `set-props!`, `refresh!`, `render`, `destroy!` |
-| `scheduler.cljs` | dirty set, one `requestAnimationFrame` flush, sorted by depth |
+| `scheduler.cljs` | dirty set, one microtask flush, sorted by depth |
 | `dom.cljs` | hiccup → VNode, create/patch/unmount, attrs, keyed diff, roots |
 | `state.cljs` | `app-db` atom and root trie node |
 | `testing.cljs` | sync `flush!`, render counters, `reset-app!` |
@@ -31,11 +31,11 @@ and an example are in `README.md`; this skill covers what only the source shows.
 1. `dispatch` queues the event, and `drain!` runs in a microtask. `dispatch-sync` processes now and then `sched/flush!`, and throws if called inside a handler. Its `:dispatch` effect is still queued, so that event renders later.
 2. `process!` calls `(apply handler @app-db (rest ev))` (the args, without the event id). `nil` is ignored. With an effect map it applies `:db` → `set-db!`, then `:dispatch` (one event), then every other key through `run-fx!`.
 3. `set-db!` → `trie/notify!`: marks the cells at each visited node and descends into child `k` only when `(get old k)` is not `identical?` to `(get new k)`. So `[:todos]` fires on any todo change, `[:todos 1]` only when that entry changes, and `[]` on every change. This relies on structural sharing.
-4. `cells/mark!` sets the slot's stale flag → `sched/schedule!` queues the instance once → one rAF.
-5. `flush!` sorts the dirty instances by depth (parents first; ties keep schedule order) and runs the runner (`dom/update-inst!`) on those still dirty. Anything marked during the flush waits for the next frame.
+4. `cells/mark!` sets the slot's stale flag → `sched/schedule!` queues the instance once → one `queueMicrotask` flush, after the event drain (also a microtask) so a batch of events renders once, before paint.
+5. `flush!` sorts the dirty instances by depth (parents first; ties keep schedule order) and runs the runner (`dom/update-inst!`) on those still dirty. Anything marked during the flush runs in a follow-up microtask.
 6. `refresh!` recomputes stale slots in binding order. A prop, path or derived slot counts as changed only if its new value is not `=` to the old one. A marked `:local` slot always counts as changed, so its dependents recompute and the body renders. If nothing changed, there is no render.
 7. On a change, the body renders → `normalize` → `patch!` against the instance's own previous vnode.
-8. A child `:comp` vnode is a boundary. The child instance is reused, `set-props!` compares args with `=`, and on a change `update-inst!` runs on the child immediately. That clears the child's dirty flag, so the flush skips it (one render per frame).
+8. A child `:comp` vnode is a boundary. The child instance is reused, `set-props!` compares args with `=`, and on a change `update-inst!` runs on the child immediately. That clears the child's dirty flag, so the flush skips it (one render per flush).
 
 ## defc binding kinds
 
@@ -65,6 +65,6 @@ through a path binding; bind a global atom itself (`g some-atom`) to get a watch
 
 ## Testing
 
-Use `hammer.testing/flush!` (drain + flush, max 10 rounds) instead of waiting for
-rAF. Use `renders`/`reset-renders!` to assert which components re-rendered and
+Use `hammer.testing/flush!` (drain + flush, max 10 rounds) instead of awaiting
+microtasks. Use `renders`/`reset-renders!` to assert which components re-rendered and
 `reset-app!` as a `:before` fixture. Run with `npm test`; `bb loc` must stay ≤ 800.

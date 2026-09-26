@@ -46,7 +46,7 @@ running app already has, instead of resetting it.
 `hammer.testing` provides:
 
 - `(flush!)` — drains queued events, then renders until nothing is dirty
-  (synchronous equivalent of the microtask + animation-frame pipeline).
+  (synchronous equivalent of the event + render microtasks).
 - `(renders c)` / `(reset-renders! & cs)` — a component's render count since
   the last reset; use to assert that only the expected components re-rendered.
 - `(reset-app!)` — unmounts every root and empties `app-db`; use as a
