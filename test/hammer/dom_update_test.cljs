@@ -247,3 +247,98 @@
       (is (= after-good (.-refs state/paths)))
       (is (= "<p>1</p>" (.-innerHTML el)))
       (is (pos? (count @logs))))))
+
+;; ---- keyed reconciliation (prefix/suffix + LIS)
+
+(defc klist [] [xs [:xs]] [:ul (for [x xs] ^{:key x} [:li (str x)])])
+
+(defn- count-moves!
+  "Counts insertBefore calls on el; returns the counter atom."
+  [^js el]
+  (let [n (atom 0)
+        orig (.-insertBefore el)]
+    (set! (.-insertBefore el) (fn [a b] (swap! n inc) (.call orig el a b)))
+    n))
+
+(defn- texts [el] (mapv #(.-textContent %) (kids el)))
+
+(defn- keyed-step!
+  "Dispatches :xs → xs on a mounted klist ul; checks order and that every
+  surviving key kept its node. Returns the number of insertBefore calls."
+  [ul xs]
+  (let [before (zipmap (texts ul) (kids ul))
+        moves (count-moves! ul)]
+    (events/dispatch-sync [:set :xs xs])
+    (js-delete ul "insertBefore")
+    (is (= (mapv str xs) (texts ul)))
+    (doseq [[k node] (map vector (texts ul) (kids ul))
+            :when (before k)]
+      (is (identical? (before k) node) (str "key " k " kept its node")))
+    @moves))
+
+(defn- mount-klist [xs]
+  (reset! state/app-db {:xs xs})
+  (let [el (container)]
+    (dom/mount! [klist] el)
+    (.-firstChild el)))
+
+(deftest keyed-swap-moves-two-nodes
+  (let [xs (vec (range 1000))
+        ys (assoc xs 1 998 998 1)
+        ul (mount-klist xs)]
+    (is (= 2 (keyed-step! ul ys)))
+    (is (= 1 (keyed-step! ul (assoc ys 2 3 3 2))))
+    (is (= 1 (keyed-step! (mount-klist [:a :b]) [:b :a])))))
+
+(deftest keyed-reverse
+  (let [ul (mount-klist [1 2 3 4 5 6])]
+    (is (= 5 (keyed-step! ul [6 5 4 3 2 1])))))
+
+(deftest keyed-prefix-suffix-insert-remove
+  (let [ul (mount-klist [1 2 3 4 5])]
+    (is (= 1 (keyed-step! ul [1 2 9 3 4 5])))
+    (is (= 0 (keyed-step! ul [1 2 3 4 5])))
+    (is (= 1 (keyed-step! ul [0 1 2 3 4 5])))
+    (is (= 1 (keyed-step! ul [0 1 2 3 4 5 6])))
+    (is (= 0 (keyed-step! ul [1 2 3 4 5])))
+    (is (= 0 (keyed-step! ul [3])))
+    (is (= 2 (keyed-step! ul [1 3 5])))
+    (is (= 0 (keyed-step! ul [])))
+    (is (= 0 (keyed-step! ul [7 8])))))
+
+(deftest keyed-vector-keys-use-value-equality
+  (let [ul (mount-klist [[:a 1] [:b 2] [:c 3]])]
+    (is (= 1 (keyed-step! ul [[:c 3] [:a 1] [:b 2]])))))
+
+(deftest keyed-component-rows-move-with-component-anchors
+  (reset! state/app-db {:ids [1 2 3 4] :todos (into {} (for [i [1 2 3 4 5]] [i {:title (str i)}]))})
+  (let [el (container)]
+    (dom/mount! [items] el)
+    (let [ul (.-firstChild el)
+          [a b c d] (kids ul)
+          moves (count-moves! ul)]
+      (t/reset-renders! item)
+      (events/dispatch-sync [:set :ids [4 5 2 3 1]])
+      (is (= "<ul><li>4</li><li>5</li><li>2</li><li>3</li><li>1</li></ul>" (.-innerHTML el)))
+      (is (= [d b c a] (keep (set [a b c d]) (kids ul))))
+      (is (= 1 (t/renders item)))
+      (is (= 3 @moves)))))
+
+(defc tlist [] [xs [:xs]] [:ul (for [[k tag] xs] ^{:key k} [tag (str k)])])
+
+(deftest keyed-tag-change-under-same-key-while-moving
+  (reset! state/app-db {:xs [[1 :li] [2 :li] [3 :li]]})
+  (let [el (container)]
+    (dom/mount! [tlist] el)
+    (events/dispatch-sync [:set :xs [[3 :li] [2 :p] [1 :li]]])
+    (is (= "<ul><li>3</li><p>2</p><li>1</li></ul>" (.-innerHTML el)))))
+
+(deftest keyed-random-shuffles-inserts-removals
+  (let [seed (atom 42)
+        rnd (fn [n] (swap! seed #(mod (+ (* % 1103515245) 12345) 2147483648)) (mod (quot @seed 65536) n))
+        shuffle* (fn [xs] (reduce (fn [v i] (let [j (rnd (inc i))] (assoc v i (v j) j (v i))))
+                                  (vec xs) (range (dec (count xs)) 0 -1)))
+        ul (mount-klist [])]
+    (dotimes [_ 200]
+      (let [xs (->> (range 20) (filter (fn [_] (< (rnd 10) 6))) shuffle*)]
+        (keyed-step! ul xs)))))
