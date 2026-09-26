@@ -21,10 +21,10 @@
   (is (cells/component? row))
   (is (= "row" (.-cname row)))
   (is (= 1 (.-nprops row)))
-  (is (= [:path :expr :expr :expr :expr] (map :kind (.-specs row))))
-  (is (= [[0] [] [1 2] [3] [0 4]] (map :deps (.-specs row))))
-  (is (= [3 4] (.-body-deps row)))
-  (is (= [0] (.-body-deps tagged))))
+  (is (= [:path :expr :expr :expr :expr] (map #(.-kind ^cells/Spec %) (.-specs row))))
+  (is (= [[0] [] [1 2] [3] [0 4]] (map #(vec (.-deps ^cells/Spec %)) (.-specs row))))
+  (is (= [3 4] (vec (.-body-deps row))))
+  (is (= [0] (vec (.-body-deps tagged)))))
 
 (deftest defc-instances-render
   (reset! state/app-db {:todos {7 {:title "x"}}})
