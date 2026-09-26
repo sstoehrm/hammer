@@ -68,4 +68,4 @@ through a path binding; bind a global atom itself (`g some-atom`) to get a watch
 
 Use `hammer.testing/flush!` (drain + flush, max 10 rounds) instead of awaiting
 microtasks. Use `renders`/`reset-renders!` to assert which components re-rendered and
-`reset-app!` as a `:before` fixture. Run with `npm test`; `bb loc` must stay ≤ 800.
+`reset-app!` as a `:before` fixture. Run with `npm test`; `bb loc` reports the core size.
