@@ -129,19 +129,42 @@
         root (trie/node)
         cells (into {} (map (fn [k] [k #js {:k k}])) pool)]
     (doseq [k pool] (trie/register! root [k] (cells k)))
-    (dotimes [round 60]
-      (let [size (rnd 400)
+    (dotimes [round 200]
+      (let [size (if (odd? round) (+ 9 (rnd 8)) (rnd 400)) ; small: a bitmap root
             o (if (even? round)
                 (into {} (map (fn [_] [(pick) (rnd 5)])) (range size))
                 (reduce (fn [m _] (assoc m (pick) (rnd 5))) {} (range size)))
-            v (reduce (fn [m _]
-                        (case (rnd 4)
-                          0 (dissoc m (pick))
-                          1 (assoc m (pick) (rnd 5))
-                          2 (assoc m (pick) [(rnd 3)]) ; = but never identical
-                          3 m))
-                      o (range (rnd 40)))
+            val #(let [x (rnd 6)] (when (pos? x) x)) ; nil values too
+            o (if (zero? (mod round 3)) (reduce (fn [m _] (assoc m (pick) (val))) o (range 20)) o)
+            edit (fn [m assoc dissoc]
+                   (reduce (fn [m _]
+                             (case (rnd 4)
+                               0 (dissoc m (pick))
+                               1 (assoc m (pick) (val))
+                               2 (assoc m (pick) [(rnd 3)]) ; = but never identical
+                               3 m))
+                           m (range (rnd 40))))
+            v (if (zero? (mod round 4))
+                (persistent! (edit (transient o) assoc! dissoc!))
+                (edit o assoc dissoc))
             expected (set (keep (fn [k] (when-not (identical? (get o k) (get v k)) (cells k))) pool))
             seen (atom #{})]
         (trie/notify! root o v #(swap! seen conj %))
         (is (= expected @seen) (str "round " round))))))
+
+(deftest hash-map-diff-sees-a-key-swap-with-an-identical-value
+  ;; k1 -> 1 replaced by k2 -> 1 in the same bitmap slot (numbers hash to
+  ;; themselves: k and k+32 share the root slot of a map of <= 16 entries):
+  ;; the values are identical but the keys differ, so both must be marked
+  (let [root (trie/node)
+        ks (range 64)
+        cells (into {} (map (fn [k] [k #js {:k k}])) ks)]
+    (doseq [k ks] (trie/register! root [k] (cells k)))
+    (doseq [k1 (range 1 11)]
+      (let [k2 (+ k1 32)
+            o (into {} (map (fn [k] [k 1])) (range 1 11))
+            v (-> o (dissoc k1) (assoc k2 1))
+            seen (atom #{})]
+        (is (instance? PersistentHashMap o))
+        (trie/notify! root o v #(swap! seen conj %))
+        (is (= #{(cells k1) (cells k2)} @seen) (str k1 " -> " k2))))))

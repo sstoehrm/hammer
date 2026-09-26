@@ -222,7 +222,8 @@
 ;; that shares structure with its old version costs O(changes), not O(size).
 
 (defn- node-keys! [node f]
-  (when (some? node) (.kv-reduce ^js node (fn [_ k _] (f k) nil) nil)))
+  ;; every inode type has kv-reduce; the hint keeps the name renamable (no extern)
+  (when (some? node) (.kv-reduce ^BitmapIndexedNode node (fn [_ k _] (f k) nil) nil)))
 
 (defn- inode-diff!
   "Calls (f k) for a superset of the keys whose values are not identical
@@ -230,8 +231,8 @@
   [a b f]
   (cond
     (and (instance? BitmapIndexedNode a) (instance? BitmapIndexedNode b))
-    (let [ba (.-bitmap ^js a) bb (.-bitmap ^js b)
-          xa (.-arr ^js a) xb (.-arr ^js b)]
+    (let [ba (.-bitmap ^BitmapIndexedNode a) bb (.-bitmap ^BitmapIndexedNode b)
+          xa (.-arr ^BitmapIndexedNode a) xb (.-arr ^BitmapIndexedNode b)]
       (loop [bits (bit-or ba bb)]
         (when-not (zero? bits)
           (let [bit (bit-and bits (- bits))
@@ -242,15 +243,15 @@
                 kb (when ib (aget xb ib))
                 vb (when ib (aget xb (inc ib)))]
             (cond
-              (identical? va vb) nil ; same sub-node, or same value of the same key
-              (and ia ib (nil? ka) (nil? kb)) (inode-diff! va vb f)
-              (and ia ib (some? ka) (= ka kb)) (f ka)
+              (and ia ib (nil? ka) (nil? kb)) (when-not (identical? va vb) (inode-diff! va vb f))
+              ;; values are compared only under the same key: 1 is identical to 1
+              (and ia ib (some? ka) (some? kb) (= ka kb)) (when-not (identical? va vb) (f ka))
               :else (do (when ia (if (nil? ka) (node-keys! va f) (f ka)))
                         (when ib (if (nil? kb) (node-keys! vb f) (f kb)))))
             (recur (bit-xor bits bit))))))
 
     (and (instance? ArrayNode a) (instance? ArrayNode b))
-    (let [xa (.-arr ^js a) xb (.-arr ^js b)]
+    (let [xa (.-arr ^ArrayNode a) xb (.-arr ^ArrayNode b)]
       (dotimes [i 32]
         (let [x (aget xa i) y (aget xb i)]
           (when-not (identical? x y)
@@ -281,9 +282,9 @@
   otherwise returns nil without calling f."
   [a b f]
   (when (and (instance? PersistentHashMap a) (instance? PersistentHashMap b))
-    (let [ra (.-root ^js a) rb (.-root ^js b)]
+    (let [ra (.-root ^PersistentHashMap a) rb (.-root ^PersistentHashMap b)]
       (when (and (some? ra) (some? rb))
-        (when-not (identical? (.-nil-val ^js a) (.-nil-val ^js b)) (f nil))
+        (when-not (identical? (.-nil-val ^PersistentHashMap a) (.-nil-val ^PersistentHashMap b)) (f nil))
         (when-not (identical? ra rb) (inode-diff! ra rb f))
         true))))
 
