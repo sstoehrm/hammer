@@ -6,6 +6,7 @@
             [hammer.scheduler :as sched]))
 
 (deftype Comp [cname nprops specs body ^:mutable renders])
+(deftype Spec [kind deps f])
 (deftype Cell [inst i])
 (deftype Instance [comp depth ^:mutable dirty ^:mutable mounted ^:mutable vnode
                    vals stale kinds paths cells])
@@ -13,7 +14,9 @@
 (defn component
   "Built by defc. specs: one {:kind :path|:expr, :deps [slot], :f fn} per binding."
   [cname nprops specs body]
-  (Comp. cname nprops (to-array specs) body 0))
+  (Comp. cname nprops
+         (to-array (map (fn [{:keys [kind deps f]}] (Spec. kind (to-array deps) f)) specs))
+         body 0))
 
 (defn component? [x] (instance? Comp x))
 
@@ -24,7 +27,14 @@
     (aset (.-stale inst) (.-i cell) true)
     (sched/schedule! inst)))
 
-(defn- dep-vals [vals deps] (map #(aget vals %) deps))
+(defn- call
+  "Calls f with the slot values at indices deps."
+  [f vals ^js deps]
+  (case (alength deps)
+    0 (f)
+    1 (f (aget vals (aget deps 0)))
+    2 (f (aget vals (aget deps 0)) (aget vals (aget deps 1)))
+    (.apply f nil (.map deps #(aget vals %)))))
 
 (defn create
   "Instantiates c with positional args. Evaluates every binding once,
@@ -45,11 +55,12 @@
       (aset kinds i :prop))
     (dotimes [j (alength specs)]
       (let [i (+ np j)
-            {:keys [kind deps f]} (aget specs j)
+            ^Spec spec (aget specs j)
+            kind (.-kind spec)
             cell (Cell. inst i)
             failed? (volatile! false)
             v (try
-                (apply f (dep-vals vals deps))
+                (call (.-f spec) vals (.-deps spec))
                 (catch :default e
                   (js/console.error "hammer: render failed in" (.-cname c) e)
                   (vreset! failed? true)
@@ -113,13 +124,13 @@
       (when (aget stale i) (aset changed i true)))
     (dotimes [j (alength specs)]
       (let [i (+ np j)
-            {:keys [deps f]} (aget specs j)
-            dep-changed? (some #(aget changed %) deps)]
+            ^Spec spec (aget specs j)
+            dep-changed? (.some (.-deps spec) #(aget changed %))]
         (case (aget (.-kinds inst) i)
           :path
           (do (when dep-changed?
                 (let [old (aget (.-paths inst) i)
-                      p (apply f (dep-vals vals deps))
+                      p (call (.-f spec) vals (.-deps spec))
                       cell (aget (.-cells inst) i)]
                   (when (not= old p)
                     (trie/unregister! state/paths old cell)
@@ -133,16 +144,16 @@
 
           :derived
           (when dep-changed?
-            (change! vals changed i (apply f (dep-vals vals deps)))))))
+            (change! vals changed i (call (.-f spec) vals (.-deps spec)))))))
     (.fill stale false)
-    (boolean (some true? changed))))
+    (.some changed true?)))
 
 (defn render
   "Calls the component body with the current slot values."
   [^Instance inst]
   (let [^Comp c (.-comp inst)]
     (set! (.-renders c) (inc (.-renders c)))
-    (apply (.-body c) (.-vals inst))))
+    (.apply (.-body c) nil (.-vals inst))))
 
 (defn destroy!
   "Unsubscribes paths, removes watches, marks the instance unmounted."

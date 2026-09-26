@@ -32,12 +32,19 @@
 
 (declare normalize)
 
-(defn- push-kids! [out xs]
-  (doseq [x xs]
-    (cond
-      (or (nil? x) (false? x)) nil
-      (seq? x) (push-kids! out x)
-      :else (.push out (normalize x))))
+(defn- push-kid! [out x]
+  (cond
+    (or (nil? x) (false? x)) out
+    (seq? x) (reduce push-kid! out x)
+    :else (doto out (.push (normalize x)))))
+
+(defn- push-kids!
+  "Normalizes the children of hiccup vector v from index i on."
+  [out v i]
+  (loop [i i]
+    (when (< i (count v))
+      (push-kid! out (nth v i))
+      (recur (inc i))))
   out)
 
 (defn normalize
@@ -55,7 +62,7 @@
               c (class-str (:class attrs))
               c (if cls (if c (str cls " " c) cls) c)
               attrs (cond-> attrs id (assoc :id id) c (assoc :class c))]
-          (VNode. :el tag nil attrs (push-kids! #js [] (subvec x (if a? 2 1))) k nil nil nil nil))))
+          (VNode. :el tag nil attrs (push-kids! #js [] x (if a? 2 1)) k nil nil nil nil))))
 
     (or (nil? x) (false? x)) (text-vnode "")
     :else (text-vnode (str x))))
@@ -68,7 +75,8 @@
       (vector? h) (events/dispatch h)
       (fn? h) (h e))))
 
-(def ^:private props #{:value :checked :selected})
+(defn- prop? [k]
+  (or (keyword-identical? k :value) (keyword-identical? k :checked) (keyword-identical? k :selected)))
 
 (defn- set-attr! [^js el k old v]
   (let [n (name k)]
@@ -89,7 +97,7 @@
         (doseq [[sk _] old]
           (when-not (contains? v sk) (.removeProperty s (name sk)))))
 
-      (props k)
+      (prop? k)
       (let [v (if (= k :value) (str (or v "")) (boolean v))]
         (when (not= v (gobj/get el n)) (gobj/set el n v)))
 
@@ -101,12 +109,16 @@
   "Applies attrs nu over old. :value/:checked/:selected are always compared
   against the live element so user input is never overwritten needlessly."
   [^js el old nu]
-  (doseq [[k v] nu]
-    (when (or (props k) (not= v (get old k)))
-      (set-attr! el k (get old k) v)))
-  (doseq [[k v] old]
-    (when-not (contains? nu k)
-      (set-attr! el k v nil))))
+  (reduce-kv (fn [_ k v]
+               (let [o (get old k)]
+                 (when (or (prop? k) (not= v o))
+                   (set-attr! el k o v))))
+             nil nu)
+  (when old
+    (reduce-kv (fn [_ k v]
+                 (when-not (contains? nu k)
+                   (set-attr! el k v nil)))
+               nil old)))
 
 ;; ---- create / unmount
 
