@@ -1,5 +1,5 @@
 (ns hammer.trie-test
-  (:require [cljs.test :refer [deftest is]]
+  (:require [cljs.test :refer [deftest is testing]]
             [hammer.trie :as trie]))
 
 (defn- marks [root old nu]
@@ -43,7 +43,7 @@
     (is (= [c2] (marks root {:a {:x 1}} {:a {:x 2}})))
     (trie/unregister! root [:a :x] c2)
     (is (= 0 (.-refs root)))
-    (is (empty? (.-children root)))))
+    (is (empty? (trie/child-keys root)))))
 
 (deftest root-path-and-identical-db
   (let [root (trie/node)
@@ -51,3 +51,65 @@
     (trie/register! root [] :all)
     (is (= [:all] (marks root db {:a 2})))
     (is (= [] (marks root db db)))))
+
+(deftest child-keys-keep-value-semantics
+  (let [root (trie/node)
+        kw (keyword (str "a" "b"))]
+    (trie/register! root [kw] :kw)
+    (trie/register! root [[:v (str "x" 1)]] :vec)
+    (trie/register! root ["ab"] :str)
+    (trie/register! root [1] :one)
+    (trie/register! root ["1"] :one-str)
+    (trie/register! root [nil] :nil)
+    (trie/register! root [true] :true)
+    (trie/register! root [false] :false)
+    (trie/register! root [:ns/ab] :ns-kw)
+    (trie/register! root ['ab] :sym)
+    (testing "runtime keyword finds the literal key and vice versa"
+      (is (= [:kw] (marks root {:ab 1} {:ab 2})))
+      (is (= [:kw] (marks root {kw 1} {(keyword "ab") 2}))))
+    (testing "vector keys by value"
+      (is (= [:vec] (marks root {[:v "x1"] 1} {[:v "x1"] 2}))))
+    (testing "a string and a keyword with the same name are different keys"
+      (is (= [:str] (marks root {"ab" 1} {"ab" 2})))
+      (is (not= (trie/child root "ab") (trie/child root :ab))))
+    (testing "a number and a numeric string are different keys"
+      (is (= [:one] (marks root {1 :a} {1 :b})))
+      (is (= [:one-str] (marks root {"1" :a} {"1" :b})))
+      (is (= [:one] (marks root [0 :a] [0 :b]))))
+    (testing "nil and booleans"
+      (is (= [:nil] (marks root {nil 1} {nil 2})))
+      (is (= #{:true :false} (set (marks root {true 1 false 1} {true 2 false 2})))))
+    (testing "namespaced keyword and symbol stay apart from :ab"
+      (is (= [:ns-kw] (marks root {:ns/ab 1} {:ns/ab 2})))
+      (is (= [:sym] (marks root {'ab 1} {'ab 2}))))
+    (is (= 10 (count (trie/child-keys root))))
+    (testing "unregister by an equal key built at runtime drops the node"
+      (doseq [[p c] [[[(keyword "ab")] :kw] [[[:v "x1"]] :vec] [["ab"] :str] [[1] :one]
+                     [["1"] :one-str] [[nil] :nil] [[true] :true] [[false] :false]
+                     [[(keyword "ns" "ab")] :ns-kw] [[(symbol "ab")] :sym]]]
+        (trie/unregister! root p c))
+      (is (empty? (trie/child-keys root)))
+      (is (zero? (.-refs root))))))
+
+(deftest cell-sets-grow-and-shrink
+  ;; cells are removed by identity: keep one object per cell
+  (let [root (trie/node)
+        [c1 c2 c3] [:c1 :c2 :c3]]
+    (trie/register! root [:a] c1)
+    (trie/register! root [:a] c2)
+    (trie/register! root [:a] c3)
+    (is (= [c1 c2 c3] (marks root {:a 1} {:a 2})))
+    (trie/unregister! root [:a] c2)
+    (is (= [c1 c3] (marks root {:a 1} {:a 2})))
+    (trie/unregister! root [:a] c1)
+    (is (= [c3] (marks root {:a 1} {:a 2})))
+    (trie/unregister! root [:a] c3)
+    (is (empty? (trie/child-keys root)))))
+
+(deftest non-vector-paths
+  (let [root (trie/node)]
+    (trie/register! root (list :a 0) :l)
+    (is (= [:l] (marks root {:a [1]} {:a [2]})))
+    (trie/unregister! root (list :a 0) :l)
+    (is (empty? (trie/child-keys root)))))

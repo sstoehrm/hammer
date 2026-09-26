@@ -61,6 +61,36 @@
     (is (= #{:vec :map} (marks root {:m [:x "y1"]} {:m (hash-map :a 1)})))
     (is (= #{:map :nil} (marks root {:m {:a 1}} {:m nil})))))
 
+(deftest trie-eq-index-keeps-types-apart
+  (let [root (trie/node)]
+    (trie/register-eq! root [:m] :ab :kw)
+    (trie/register-eq! root [:m] "ab" :str)
+    (trie/register-eq! root [:m] 1 :one)
+    (trie/register-eq! root [:m] "1" :one-str)
+    (trie/register-eq! root [:m] true :true)
+    (trie/register-eq! root [:m] false :false)
+    (testing "string vs keyword with the same name"
+      (is (= #{:str} (marks root {} {:m "ab"})))
+      (is (= #{:kw :str} (marks root {:m (keyword "ab")} {:m "ab"}))))
+    (testing "number vs numeric string"
+      (is (= #{:one :one-str} (marks root {:m 1} {:m "1"})))
+      (is (= #{} (marks root {:m 1} {:m 1.0}))))
+    (testing "booleans are not nil"
+      (is (= #{:true :false} (marks root {:m true} {:m false})))
+      (is (= #{:false} (marks root {:m false} {:m nil}))))
+    (testing "runtime keyword = literal: no flip"
+      (is (= #{:kw} (marks root {:m :ab} {:m (keyword "a")})))
+      (is (= #{} (marks root {:m :ab} {:m (keyword (str "a" "b"))}))))
+    (testing "unregister by equal runtime values"
+      (trie/unregister-eq! root [:m] (keyword "ab") :kw)
+      (trie/unregister-eq! root [:m] (str "a" "b") :str)
+      (trie/unregister-eq! root [:m] 1.0 :one)
+      (trie/unregister-eq! root [:m] "1" :one-str)
+      (trie/unregister-eq! root [:m] true :true)
+      (trie/unregister-eq! root [:m] false :false)
+      (is (empty? (trie/child-keys root)))
+      (is (zero? (.-refs root))))))
+
 (deftest trie-hash-collisions-stay-separate
   ;; nil and 0 both hash to 0; cells are removed by identity, so use one object
   (let [root (trie/node)
@@ -85,14 +115,14 @@
     (trie/unregister-eq! root [:a :b] 1 c1)
     (is (= #{p c2} (marks root {} {:a {:b 1}})))
     (trie/unregister-eq! root [:a :b] 1 c2)
-    (is (nil? (get (.-children (get (.-children root) :a)) :b)))
+    (is (nil? (trie/child (trie/child root :a) :b)))
     (trie/unregister! root [:a] p)
-    (is (empty? (.-children root)))
+    (is (empty? (trie/child-keys root)))
     (is (zero? (.-refs root)))
     (testing "NaN never equals itself but still unregisters"
       (trie/register-eq! root [:n] js/NaN nan)
       (trie/unregister-eq! root [:n] js/NaN nan)
-      (is (empty? (.-children root))))))
+      (is (empty? (trie/child-keys root))))))
 
 ;; defc
 
@@ -191,7 +221,7 @@
     (events/dispatch-sync [:put :k :b])
     (is (= "<p><b>false</b></p>" (.-innerHTML el)))
     (is (= 0 (runs #(events/dispatch-sync [:put :sel {:a 5 :b 2}]))))
-    (is (nil? (get (.-children (get (.-children state/paths) :sel)) :a)))
+    (is (nil? (trie/child (trie/child state/paths :sel) :a)))
     (events/dispatch-sync [:put :sel {:a 5 :b 1}])
     (is (= "<p><b>true</b></p>" (.-innerHTML el)))))
 
@@ -202,8 +232,8 @@
     (h/mount! [maybe] el {:show true :selected 3})
     (is (= 1 (count (classes el))))
     (events/dispatch-sync [:put :show false])
-    (is (nil? (get (.-children state/paths) :selected)))
+    (is (nil? (trie/child state/paths :selected)))
     (is (= 0 (runs #(events/dispatch-sync [:put :selected 4]))))
     (t/reset-app!)
-    (is (empty? (.-children state/paths)))
+    (is (empty? (trie/child-keys state/paths)))
     (is (zero? (.-refs state/paths)))))
