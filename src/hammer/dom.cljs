@@ -230,7 +230,11 @@
 
 (defn- hiccup? [x] (or (vector? x) (seq? x) (instance? VNode x)))
 
-(defn- text-of [x] (if (or (nil? x) (false? x)) "" (str x)))
+(defn- text-of [x]
+  (cond
+    (string? x) x
+    (or (nil? x) (false? x)) ""
+    :else (str x)))
 
 (defn- join-class
   "The class attribute for static tag classes cls and :class value c, as normalize builds it."
@@ -246,7 +250,7 @@
   [^VNode v i one? ^js n o x depth]
   (let [^js regs (.-inst v)
         old (when regs (aget regs i))]
-    (if (hiccup? x)
+    (if (and (not (string? x)) (hiccup? x))
       (let [nu (push-kid! #js [] x)
             el (if one? n (.-parentNode n))
             end (when-not one? n)]

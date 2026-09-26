@@ -16,13 +16,13 @@ and an example are in `README.md`; this skill covers what only the source shows.
 
 | File | Responsibility |
 |---|---|
-| `core.clj` | `defc` macro: classifies bindings, computes deps by symbol name |
+| `core.clj` | `defc` macro: classifies bindings, computes deps by symbol name, compiles literal hiccup to templates |
 | `core.cljs` | public API re-exports, `mount!` (2-arity keeps db) |
 | `events.cljs` | handler/fx registry, microtask queue, `set-db!`, effect processing |
 | `trie.cljs` | path subscriptions; `notify!` walks only changed branches |
 | `cells.cljs` | `Instance` slots: `create`, `set-props!`, `refresh!`, `render`, `destroy!` |
 | `scheduler.cljs` | dirty set, one microtask flush, sorted by depth |
-| `dom.cljs` | hiccup → VNode, create/patch/unmount, attrs, keyed diff, roots |
+| `dom.cljs` | hiccup → VNode, create/patch/unmount, attrs, keyed diff, roots, `:tpl` templates and holes |
 | `state.cljs` | `app-db` atom and root trie node |
 | `testing.cljs` | sync `flush!`, render counters, `reset-app!` |
 
@@ -34,8 +34,34 @@ and an example are in `README.md`; this skill covers what only the source shows.
 4. `cells/mark!` sets the slot's stale flag → `sched/schedule!` queues the instance once → one `queueMicrotask` flush, after the event drain (also a microtask) so a batch of events renders once, before paint.
 5. `flush!` sorts the dirty instances by depth (parents first; ties keep schedule order) and runs the runner (`dom/update-inst!`) on those still dirty. Anything marked during the flush runs in a follow-up microtask.
 6. `refresh!` recomputes stale slots in binding order. A prop, path or derived slot counts as changed only if its new value is not `=` to the old one. A marked `:local` slot always counts as changed, so its dependents recompute. The body renders only if a slot it names (by symbol, as for deps) changed; a slot that only feeds later bindings, or a prop the body never names, recomputes without a render.
-7. On a change, the body renders → `normalize` → `patch!` against the instance's own previous vnode.
+7. On a change, the body renders → `normalize` → `patch!` against the instance's own previous vnode. A compiled body yields a `:tpl` vnode (see below), patched hole by hole.
 8. A child `:comp` vnode is a boundary. The child instance is reused, `set-props!` compares args with `=`, and on a change `update-inst!` runs on the child immediately. That clears the child's dirty flag, so the flush skips it (one render per flush).
+
+## Compiled templates
+
+`defc` compiles every literal element vector in hiccup position: the body's
+value, the tails of `if`/`if-not`/`if-let`/`if-some`/`when*`/`let`/`do`/`cond`/`case`,
+the body of `for`, and children of such elements. Each becomes a template
+(`hammer.dom/template`, a `def` named `<comp>__tplN`): static skeleton hiccup
+built once and `cloneNode`d per instance, plus a VNode `:tpl` whose `attrs` holds
+the hole values (in post-order: kids before their element's attrs), `kids` the
+hole nodes (resolved by generated firstChild/nextSibling code), `inst` the
+per-hole regions. Update writes only holes whose value is not `identical?`;
+`:value/:checked/:selected` are re-applied against the live element every render.
+
+| Position | Compiled as |
+|---|---|
+| literal string/number/keyword/`true` child, literal attr value | static in the skeleton (`nil`/`false` children vanish) |
+| other child expression | kid hole: text node for scalars, a region of vnodes for vectors/seqs/templates (switches at runtime) |
+| sole child of its element | kid hole owning the element (no anchor); otherwise the hole's text node is the region's end anchor |
+| `:class`, `:style`, other attrs with non-literal value | attr hole (`:class` joined with the tag's classes) |
+| `:on-*`, `:ref`, `:value/:checked/:selected` | always holes (expandos/properties aren't cloned) |
+| non-literal second item `[:td x]` | kid hole, but the whole template renders as plain hiccup whenever `x` is a map |
+| attrs map with non-keyword keys, non-keyword tag, component vectors | plain hiccup (children still compiled) |
+
+Not compiled: binding inits, component args, args of any other call, and
+`hammer.dom/mount!` hiccup. A compiled vnode is mutable, so these positions
+keep plain data (a value reused twice must not be one DOM node).
 
 ## defc binding kinds
 
@@ -62,6 +88,7 @@ through a path binding; bind a global atom itself (`g some-atom`) to get a watch
 | Input value "fights" typing | `:value/:checked/:selected` are compared to the live element, so the db must hold the current value |
 | `:ref` gets `nil` | called with `nil` on unmount; refs run after insertion into the document |
 | Body shows stale global/db state | the body re-runs only when a slot it names changes; a raw `@global` or `@app-db` in the body never triggers one. Bind it as a slot |
+| Extra empty text node in `childNodes` | a `nil` kid hole, or a hiccup-valued hole among siblings, keeps its (empty) text node; invisible to `innerHTML`/`children`/`:empty` |
 | Throw doesn't crash the app | binding init → nil slot; body throw → old DOM kept; the runner catches per instance. Check the console for `hammer:` |
 
 ## Testing

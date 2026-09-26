@@ -138,7 +138,7 @@
 (deftest keyed-and-unkeyed-lists-match
   (check! lists lists-plain [:a :b]
           [{:a [1 2 3] :b 2} {:a [3 1 2 4] :b 4} {:a [] :b nil} {:a [5] :b 5}
-           {:a [2 5 1 7 3] :b 1} {:a (range 10 0 -1) :b 3} {:a [1 2 3] :b 2}]))
+           {:a [2 5 1 7 3] :b 1} {:a (range 10 0 -1) :b 3} {:a [1 2 3] :b 2} {:a [8 9] :b 8} {:a [1 2 3] :b 2}]))
 
 (defc child [id] [v [:vals id]] [:b {:data-id id} "c" id ":" v])
 

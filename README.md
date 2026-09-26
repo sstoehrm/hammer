@@ -36,6 +36,11 @@ the `mount!` container, so `(.-currentTarget e)` is that container; use
 `:style` map. SVG is not supported in v1 — elements are created with
 `createElement`.
 
+Literal hiccup in a `defc` body compiles to templates: the static structure is
+built once and cloned per instance, and an update writes only the changed
+dynamic parts. Hiccup built by other functions, passed as a prop or given to
+`mount!` is diffed as plain data, with the same result.
+
 An `(atom ...)` binding is created once per instance and does not follow later
 prop changes. A vector literal binding is always a path; use `(vector a b)` for
 a vector value.
@@ -57,7 +62,7 @@ running app already has, instead of resetting it.
 
 ## Measured
 
-- Core size (`bb loc`): 632 lines
+- Core size (`bb loc`): 1078 lines
 - TodoMVC tokens vs re-frame (`bb tokens`): 52.5% fewer. Same features (add, toggle,
   toggle all, edit, delete, clear completed, filters, localStorage); re-frame's
   example also validates the db with spec and routes with secretary, ours
