@@ -177,7 +177,8 @@
 (defn- run-refs!
   "Calls :ref fns queued by create! once their elements are in the document."
   []
-  (.forEach (.splice ref-queue 0) (fn [[f el]] (safe-ref! f el))))
+  (when (pos? (alength ref-queue))
+    (.forEach (.splice ref-queue 0) (fn [[f el]] (safe-ref! f el)))))
 
 (defn- node-of [^VNode v]
   (if (keyword-identical? (.-t v) :comp)
@@ -585,11 +586,13 @@
 
 (sched/set-runner!
  (fn [^cells/Instance inst]
-   (try
-     (update-inst! inst)
-     (catch :default e
-       (js/console.error "hammer: update failed in" (.-cname ^cells/Comp (.-comp inst)) e))
-     (finally
-       (when (pos? (.-size new-types)) (listen-root! (root-of inst)))
-       (.clear new-types)
-       (run-refs!)))))
+   (if-not (.-mounted inst)
+     (set! (.-dirty inst) false) ; unmounted by an earlier patch in this flush
+     (try
+       (update-inst! inst)
+       (catch :default e
+         (js/console.error "hammer: update failed in" (.-cname ^cells/Comp (.-comp inst)) e))
+       (finally
+         (when (pos? (.-size new-types)) (listen-root! (root-of inst)))
+         (.clear new-types)
+         (run-refs!))))))
