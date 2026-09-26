@@ -273,7 +273,7 @@
                 (do (clear-kids! (.-parentNode n) old n)
                     (set! (.-data n) s)))
               (aset regs i nil))
-          (when-not (= s (text-of o))
+          (when-not (identical? s (text-of o)) ; both strings: ===
             (set! (.-data ^js (if one? (.-firstChild n) n)) s)))))))
 
 (defn- set-hole!
