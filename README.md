@@ -30,8 +30,11 @@ and each re-renders by diffing only its own hiccup.
 
 Hiccup: `:on-<dom-event>` takes an event vector or fn; `:ref` fn gets the element,
 and `nil` on removal, so write it as `#(some-> % .focus)` rather than assuming a
-non-nil element. `:class` string or collection; `:style` map. SVG is not
-supported in v1 — elements are created with `createElement`.
+non-nil element. Handlers run from one capture-phase listener per event type on
+the `mount!` container, so `(.-currentTarget e)` is that container; use
+`(.-target e)` or close over what you need. `:class` string or collection;
+`:style` map. SVG is not supported in v1 — elements are created with
+`createElement`.
 
 An `(atom ...)` binding is created once per instance and does not follow later
 prop changes. A vector literal binding is always a path; use `(vector a b)` for
