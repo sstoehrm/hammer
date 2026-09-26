@@ -62,11 +62,37 @@
 
 ;; ---- attributes
 
-(defn- listener [^js e]
-  (let [h (gobj/get (.-__cuiH (.-currentTarget e)) (.-type e))]
-    (cond
-      (vector? h) (events/dispatch h)
-      (fn? h) (h e))))
+(defn- delegate
+  "Capture listener on a mount root: runs the __cuiH handlers for the event
+  type from target outward (target only for non-bubbling events), stopping at
+  the root or on stopPropagation. The next node is read before each handler,
+  like the browser's precomputed path. Flagged so nested roots run it once."
+  [^js e]
+  (let [root (.-currentTarget e)
+        t (.-type e)]
+    (when-not (.-__cuiD e)
+      (set! (.-__cuiD e) true)
+      (loop [^js n (.-target e)]
+        (when (and n (not (identical? n root)))
+          (let [nxt (when (.-bubbles e) (.-parentNode n))
+                h (some-> (.-__cuiH n) (gobj/get t))]
+            (cond
+              (vector? h) (events/dispatch h)
+              (fn? h) (h e))
+            (when-not (.-cancelBubble e) (recur nxt))))))))
+
+(defonce ^:private new-types (js/Set.))
+
+(defn- listen-root!
+  "Adds the capture listener for each event type seen since the last call."
+  [^js root]
+  (when (and root (pos? (.-size new-types)))
+    (let [ts (.-__cuiT root)]
+      (.forEach new-types (fn [t]
+                            (when-not (.has ts t)
+                              (.add ts t)
+                              (.addEventListener root t delegate true)))))
+    (.clear new-types)))
 
 (def ^:private props #{:value :checked :selected})
 
@@ -78,8 +104,7 @@
       (str/starts-with? n "on-")
       (let [t (subs n 3)
             hs (or (.-__cuiH el) (let [o #js {}] (set! (.-__cuiH el) o) o))]
-        (when (and (nil? old) (some? v)) (.addEventListener el t listener))
-        (when (and (some? old) (nil? v)) (.removeEventListener el t listener))
+        (when-not old (.add new-types t))
         (gobj/set hs t v))
 
       (= k :style)
@@ -282,10 +307,20 @@
     (unmount! old)
     (swap! roots dissoc el))
   (set! (.-textContent ^js el) "")
+  (when-not (.-__cuiT ^js el) (set! (.-__cuiT ^js el) (js/Set.)))
+  (.clear new-types)
   (let [v (normalize hiccup)]
     (.appendChild ^js el (create! v 0))
     (swap! roots assoc el v)
+    (listen-root! el)
     (run-refs!)))
+
+(defn- root-of
+  "The mount! container above inst's DOM, found via its __cuiT marker."
+  [^cells/Instance inst]
+  (loop [^js n (some-> (.-vnode inst) node-of)]
+    (when n
+      (if (.-__cuiT n) n (recur (.-parentNode n))))))
 
 (defn unmount-all!
   "Unmounts every root and empties its container."
@@ -302,4 +337,6 @@
      (catch :default e
        (js/console.error "hammer: update failed in" (.-cname ^cells/Comp (.-comp inst)) e))
      (finally
+       (when (pos? (.-size new-types)) (listen-root! (root-of inst)))
+       (.clear new-types)
        (run-refs!)))))
