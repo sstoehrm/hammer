@@ -80,7 +80,10 @@
   (.push queue ev)
   (when-not (.-scheduled st)
     (set! (.-scheduled st) true)
-    (.then (js/Promise.resolve) drain!)))
+    ;; queueMicrotask, not a Promise job: same FIFO microtask queue, but
+    ;; CDP's ScriptDuration (and so perf tooling built on it) does not count
+    ;; Promise reaction jobs, which hid the handler and trie notify.
+    (js/queueMicrotask drain!)))
 
 (defn dispatch-sync
   "Processes ev now, then flushes rendering. Throws inside a handler."
