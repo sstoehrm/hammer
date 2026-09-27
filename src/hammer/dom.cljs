@@ -372,9 +372,14 @@
                           (throw e)))]
                 (when-not n
                   ;; node-of treats a :comp vnode with an el as hosted; a nil
-                  ;; node would surface later as an opaque DOM error.
+                  ;; node would surface later as an opaque DOM error. A Host
+                  ;; destroy that throws, or one that returns without calling
+                  ;; cells/destroy! itself, must not leak the subscriptions
+                  ;; cells/create already made above -- so this always runs,
+                  ;; not just from the catch.
                   (try ((.-destroy h) inst)
-                       (catch :default _ (when (.-mounted inst) (cells/destroy! inst))))
+                       (catch :default _ nil))
+                  (when (.-mounted inst) (cells/destroy! inst))
                   (throw (js/Error. (str "hammer: Host create of " (.-cname ^cells/Comp c)
                                          " returned nil; it must return a DOM node"))))
                 (set! (.-el v) n)
