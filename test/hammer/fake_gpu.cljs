@@ -18,21 +18,38 @@
                                         :draw (fn [n] (swap! log conj [:draw n]))})
                 :finish (fn [] #js {})})}))
 
+(defonce ^:private saved (atom nil))
+
+(defn restore!
+  "Undoes install!: navigator.gpu and HTMLCanvasElement.prototype.getContext
+  go back to what they were before it. No-op when nothing is installed."
+  []
+  (when-let [{:keys [desc get-context]} @saved]
+    (if desc
+      (js/Object.defineProperty js/navigator "gpu" desc)
+      (js-delete js/navigator "gpu"))
+    (set! (.. js/window -HTMLCanvasElement -prototype -getContext) get-context)
+    (reset! saved nil)))
+
 (defn install!
-  "mode: :ok, :no-adapter or :missing."
+  "mode: :ok, :no-adapter or :missing. Restores a previous install! first, so
+  getContext is wrapped at most once; pair with restore! in an :after fixture."
   [mode]
+  (restore!)
   (reset! log [])
-  (let [gpu (case mode
-              :missing js/undefined
-              #js {:getPreferredCanvasFormat (fn [] "bgra8unorm")
-                   :requestAdapter (fn []
-                                     (js/Promise.resolve
-                                      (when (= mode :ok)
-                                        #js {:requestDevice (fn [] (swap! log conj [:device])
-                                                              (js/Promise.resolve (device)))})))})]
-    (js/Object.defineProperty js/navigator "gpu" #js {:value gpu :configurable true :writable true}))
   (let [proto (.. js/window -HTMLCanvasElement -prototype)
         prev (.-getContext proto)]
+    (reset! saved {:desc (js/Object.getOwnPropertyDescriptor js/navigator "gpu")
+                   :get-context prev})
+    (let [gpu (case mode
+                :missing js/undefined
+                #js {:getPreferredCanvasFormat (fn [] "bgra8unorm")
+                     :requestAdapter (fn []
+                                       (js/Promise.resolve
+                                        (when (= mode :ok)
+                                          #js {:requestDevice (fn [] (swap! log conj [:device])
+                                                                (js/Promise.resolve (device)))})))})]
+      (js/Object.defineProperty js/navigator "gpu" #js {:value gpu :configurable true :writable true}))
     (set! (.-getContext proto)
           (fn [kind]
             (this-as ^js c

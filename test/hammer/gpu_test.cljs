@@ -11,7 +11,8 @@
             [hammer.state :as state]
             [hammer.testing :as t]))
 
-(use-fixtures :each {:before (fn [] (t/reset-app!) (t/use-fake-frames!) (gpu/reset-device!))})
+(use-fixtures :each {:before (fn [] (t/reset-app!) (t/use-fake-frames!) (gpu/reset-device!))
+                     :after (fn [] (t/reset-app!) (fg/restore!))})
 
 (def inits (atom 0))
 (def unsupported (atom []))
@@ -142,3 +143,18 @@
          (is (= 1 (count (filter #(= "hammer: WebGPU unavailable:" (first %)) @logs)))
              "the page-level unavailable message is logged exactly once")
          (done))))))
+
+;; ---- #9: fake-gpu install!/restore! leave no trace
+
+(deftest fake-gpu-install-restore-leaves-no-trace
+  (fg/restore!)
+  (let [proto (.. js/window -HTMLCanvasElement -prototype)
+        orig (.-getContext proto)
+        had-gpu? (.hasOwnProperty js/navigator "gpu")]
+    (fg/install! :ok)
+    (fg/install! :no-adapter)
+    (fg/install! :ok)
+    (is (not (identical? orig (.-getContext proto))) "installed")
+    (fg/restore!)
+    (is (identical? orig (.-getContext proto)) "getContext is the pre-install fn, not a wrapper chain")
+    (is (= had-gpu? (.hasOwnProperty js/navigator "gpu")) "navigator.gpu back to its original state")))
