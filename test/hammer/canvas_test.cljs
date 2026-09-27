@@ -14,7 +14,11 @@
             [hammer.testing :as t])
   (:require-macros [hammer.macro-probe :refer [expand-error]]))
 
-(use-fixtures :each {:before (fn [] (t/reset-app!) (t/use-fake-frames!) (reset! fake/log []))})
+(use-fixtures :each {:before (fn [] (t/reset-app!) (t/use-fake-frames!) (reset! fake/log []))
+                     ;; the last test installs a counting rAF on the shared
+                     ;; draw/clock and never uninstalls it; restore it here so
+                     ;; it doesn't leak into a test namespace loaded after this one.
+                     :after (fn [] (draw/set-raf! nil))})
 
 (events/reg-event ::set (fn [db k v] {:db (assoc db k v)}))
 
