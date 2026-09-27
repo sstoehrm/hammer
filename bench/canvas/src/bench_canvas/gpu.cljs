@@ -37,7 +37,10 @@
 (defdraw points [n] [pts [:pts] color [:color]]
   {:size [W H]
    :init (fn [g i] (init g i n))
-   :dispose (fn [^js res] (.destroy ^js (.-vbuf res)) (.destroy ^js (.-ubuf res)))}
+   :dispose (fn [^js res] (.destroy ^js (.-vbuf res)) (.destroy ^js (.-ubuf res)))
+   ;; run.mjs waits on window.bench.unsupported (like vanilla's gpu.js) to
+   ;; skip a page with no WebGPU instead of timing out waiting for a draw.
+   :on-unsupported (fn [_reason] (set! (.-unsupported ^js (.-bench js/window)) true))}
   (fn [{:keys [queue] :as g} _ ^js res]
     (c/draw!)
     (let [^js queue queue]
@@ -54,6 +57,9 @@
 
 (defn main []
   (let [{:keys [n]} (c/params)]
+    ;; window.bench must exist before mount!, since a failed device request
+    ;; can call :on-unsupported (which sets window.bench.unsupported) before
+    ;; this fn returns.
+    (c/expose! (fn [op k] (dispatch [(keyword "gpu" op) k])))
     (mount! [points n] (js/document.getElementById "app")
-            {:n n :pts empty-pts :color (.gpuColor D 0)})
-    (c/expose! (fn [op k] (dispatch [(keyword "gpu" op) k])))))
+            {:n n :pts empty-pts :color (.gpuColor D 0)})))
