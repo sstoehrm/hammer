@@ -62,4 +62,16 @@
                (println (format "%-12s %8d B  %7d B gzip" b (fs/size (out b)) (gz (out b)))))
              (when (seq bad)
                (println "FAIL: forbidden namespaces:" bad)
-               (System/exit 1))))}}}
+               (System/exit 1))))}
+
+  bench-canvas
+  {:doc "Canvas benchmark: release-builds bench-canvas/bench-dom/bench-gpu, checks their namespaces, runs bench/canvas/run.mjs (args pass through, e.g. bb bench-canvas --scenario table-1k --iterations 3)"
+   :task (let [forbidden {"bench-canvas" ["hammer/dom.cljs" "hammer/core.cljs" "hammer/gpu.cljs"]
+                          "bench-gpu" ["hammer/dom.cljs" "hammer/core.cljs" "hammer/canvas.cljs"]}
+               sources (fn [b] (set (mapcat :sources (edn/read-string (slurp (str "target/bench/" b "/manifest.edn"))))))]
+           (shell "npx shadow-cljs release bench-canvas bench-dom bench-gpu")
+           (let [bad (vec (for [[b ns] forbidden n ns :when (contains? (sources b) n)] [b n]))]
+             (when (seq bad)
+               (println "FAIL: forbidden namespaces:" bad)
+               (System/exit 1)))
+           (apply shell "node bench/canvas/run.mjs" *command-line-args*))}}}

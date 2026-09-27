@@ -1,4 +1,4 @@
-{:source-paths ["src" "test" "examples/todomvc/src" "examples/canvas/src" "examples/gpu/src" "size"]
+{:source-paths ["src" "test" "examples/todomvc/src" "examples/canvas/src" "examples/gpu/src" "size" "bench/canvas/src"]
  :dev-http {8280 "examples/todomvc/public"
             8290 "examples/canvas/public"
             8291 "examples/gpu/public"}
@@ -18,4 +18,14 @@
           :size-canvas {:target :browser :output-dir "target/size/size-canvas" :asset-path "."
                         :modules {:main {:init-fn size.canvas/main}}}
           :size-gpu {:target :browser :output-dir "target/size/size-gpu" :asset-path "."
-                     :modules {:main {:init-fn size.gpu/main}}}}}
+                     :modules {:main {:init-fn size.gpu/main}}}
+          ;; canvas benchmark (bench/canvas): bench-canvas and bench-gpu must not pull in hammer.core/hammer.dom
+          :bench-canvas {:target :browser :output-dir "target/bench/bench-canvas" :asset-path "/out/bench-canvas"
+                         :compiler-options {:infer-externs :auto :warnings-as-errors true}
+                         :modules {:main {:init-fn bench-canvas.main/main}}}
+          :bench-dom {:target :browser :output-dir "target/bench/bench-dom" :asset-path "/out/bench-dom"
+                      :compiler-options {:infer-externs :auto :warnings-as-errors true}
+                      :modules {:main {:init-fn bench-canvas.many/main}}}
+          :bench-gpu {:target :browser :output-dir "target/bench/bench-gpu" :asset-path "/out/bench-gpu"
+                      :compiler-options {:infer-externs :auto :warnings-as-errors true}
+                      :modules {:main {:init-fn bench-canvas.gpu/main}}}}}
