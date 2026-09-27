@@ -44,8 +44,16 @@
                               (io/copy (io/file f) z))
                             (.size bos)))
                sources (fn [b] (set (mapcat :sources (edn/read-string (slurp (manifest b))))))
-               builds (sort (keys forbidden))]
-           (apply shell "npx shadow-cljs release" builds)
+               builds (sort (keys forbidden))
+               fail! (fn [msg] (binding [*out* *err*] (println "bb sizes:" msg)) (System/exit 1))]
+           (try
+             (apply shell "npx shadow-cljs release" builds)
+             (catch Exception e
+               (fail! (str "shadow-cljs release failed"
+                           (when-let [x (or (:exit (ex-data e)) (some-> (:proc (ex-data e)) deref :exit))] (str " (exit " x ")"))
+                           "; see its output above"))))
+           (doseq [b builds :when (not (fs/exists? (manifest b)))]
+             (fail! (str "missing " (manifest b) " (did the " b " build run?)")))
            (let [bad (vec (for [b builds
                                 :let [srcs (sources b)]
                                 n (forbidden b) :when (contains? srcs n)]
