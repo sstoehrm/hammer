@@ -225,7 +225,7 @@
             ~(str cname)
             ~(count props)
             ~(vec (map-indexed (fn [j pair]
-                                 (m/binding-spec &env (subvec slots 0 (+ (count props) j)) pair))
+                                 (m/binding-spec &env "defc" (subvec slots 0 (+ (count props) j)) pair))
                                pairs))
             ~(m/deps-of slots (vec body))
             (fn ~slots ~@out)))))))

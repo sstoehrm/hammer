@@ -299,3 +299,11 @@
     (t/flush!)
     (is (= [[:dispose {:r 1}]] @res-log)
         "unmounting the embedded draw component (show? -> false) runs :dispose")))
+
+;; ---- #19: is? arity errors name the calling macro
+
+(deftest is?-arity-error-names-the-draw-macro
+  (is (= "defdraw: is? takes a path and a value"
+         (expand-error (hammer.canvas/defdraw bad [] [a (is? [:x])] (fn [_ _])))))
+  (is (= "defloop: is? takes a path and a value"
+         (expand-error (hammer.gpu/defloop bad [] [a (is? [:x])] (fn [_ _]))))))

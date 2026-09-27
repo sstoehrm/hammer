@@ -34,13 +34,14 @@
 
 (defn binding-spec
   "slots: props and earlier binding names visible to this init. An :eq spec
-  has :f for the path and :g for the compared value."
-  [env slots [_ init]]
+  has :f for the path and :g for the compared value. macro names the calling
+  macro in error messages."
+  [env macro slots [_ init]]
   (let [deps (deps-of slots init)
         args (mapv slots deps)
         eq? (is?-form? env init)]
     (when (and eq? (not= 3 (count init)))
-      (throw (ex-info "defc: is? takes a path and a value" {:form init})))
+      (throw (ex-info (str macro ": is? takes a path and a value") {:form init})))
     (cond
       eq? `{:kind :eq :deps ~deps :f ~(slot-fn args (nth init 1)) :g (fn ~args ~(nth init 2))}
       (vector? init) `{:kind :path :deps ~deps :f ~(slot-fn args init)}
@@ -77,7 +78,7 @@
         ~(str cname)
         ~(count props)
         ~(vec (map-indexed (fn [j pair]
-                             (binding-spec env (subvec slots 0 (+ (count props) j)) pair))
+                             (binding-spec env macro (subvec slots 0 (+ (count props) j)) pair))
                            pairs))
         ~(deps-of slots [opts draw])
         (fn ~slots (cljs.core/array ~opts ~draw))
