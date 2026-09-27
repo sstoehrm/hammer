@@ -16,12 +16,18 @@
 
 (reg-event :rects/create (fn [db _] {:db (assoc db :rects (build-rects (:n db)) :sel nil)}))
 
+;; every 10th rect's colour: one transient vector, one assoc per touched map
+;; (vanilla mutates those items in place)
 (reg-event :rects/update
            (fn [db _]
-             {:db (update db :rects
-                          (fn [rs]
-                            (reduce (fn [v i] (update-in v [i :c] (fn [c] (rem (inc c) NP))))
-                                    rs (range 0 (count rs) 10))))}))
+             (let [rs (:rects db)
+                   n (count rs)]
+               {:db (assoc db :rects
+                           (loop [v (transient rs) i 0]
+                             (if (< i n)
+                               (let [r (nth rs i)]
+                                 (recur (assoc! v i (assoc r :c (rem (inc (:c r)) NP))) (+ i 10)))
+                               (persistent! v))))})))
 
 (reg-event :rects/select
            (fn [db k]
