@@ -101,3 +101,24 @@
       (t/frame! 0) (t/frame! 16) (t/frame! 32)
       (is (= [[:crashy 1] [:steady 1] [:crashy 2] [:crashy 3]] @seen))
       (finally (set! js/console.error orig)))))
+
+;; ---- #12: the loop clock stands still while the canvas can't be drawn
+
+(defloop sized [] [sz [:sz]] {:size sz}
+  (fn [_ {:keys [t dt n]}] (swap! seen conj [:sized t dt n])))
+
+(deftest loop-clock-is-frozen-while-zero-size
+  (reset! state/app-db {:sz [0 0]})
+  (cv/mount! [sized] (div))
+  (t/frame! 0) (t/frame! 16) (t/frame! 32)
+  (is (empty? @seen) "0x0: nothing drawn")
+  (events/dispatch [::set :sz [10 10]])
+  (t/frame! 1000) (t/frame! 1016)
+  (is (= [[:sized 0 0 1] [:sized 16 16 2]] @seen)
+      "the first drawable frame starts the clock: t 0, dt 0, n 1")
+  (reset! seen [])
+  (events/dispatch [::set :sz [0 0]])
+  (t/frame! 1032) (t/frame! 1048)
+  (events/dispatch [::set :sz [10 10]])
+  (t/frame! 2000)
+  (is (= [[:sized 16 0 3]] @seen) "back from 0x0: t and n continue, dt restarts at 0"))

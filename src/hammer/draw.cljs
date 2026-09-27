@@ -166,7 +166,8 @@
       ((.-resized! ^Backend (.-backend st)) st))))
 
 (defn- advance!
-  "Loop timing for a running loop at frame time ts; returns dt (0 otherwise)."
+  "Loop timing for a running loop at frame time ts; returns dt (0 otherwise).
+  Called only for frames that draw."
   [^State st ts]
   (if (and (.-loop? st) (.-running st))
     (let [dt (if (nil? (.-last st)) 0 (min (get (.-opts st) :max-dt 100) (- ts (.-last st))))]
@@ -208,20 +209,21 @@
        (not (keyword-identical? :failed (.-inited st)))))
 
 (defn- draw! [^State st ts]
-  (when (will-draw? st)
-    (let [dt (advance! st ts)]
-      (sync-size! st)
-      (let [f (.-f st)
-            arg (when (and f (pos? (.-w st)) (pos? (.-h st)))
-                  ((.-draw-arg ^Backend (.-backend st)) st))]
-        (when arg
-          (let [i (info st dt)]
-            (when (false? (.-inited st)) (init! st arg i))
-            (when (true? (.-inited st))
-              (try
-                (if (contains? (.-opts st) :init) (f arg i (.-res st)) (f arg i))
-                (catch :default e
-                  (js/console.error "hammer: draw failed in" (cname st) e))))))))))
+  (if-let [arg (when (and (will-draw? st) (pos? (.-w st)) (pos? (.-h st)))
+                 (sync-size! st)
+                 ((.-draw-arg ^Backend (.-backend st)) st))]
+    (let [f (.-f st)
+          i (info st (advance! st ts))]
+      (when (false? (.-inited st)) (init! st arg i))
+      (when (true? (.-inited st))
+        (try
+          (if (contains? (.-opts st) :init) (f arg i (.-res st)) (f arg i))
+          (catch :default e
+            (js/console.error "hammer: draw failed in" (cname st) e)))))
+    ;; not drawable (zero size, no draw arg yet, e.g. gpu device pending, or
+    ;; see will-draw?): a loop's clock stands still, :t and :n don't
+    ;; advance, and as after a pause the next drawn frame gets :dt 0.
+    (set! (.-last st) nil)))
 
 (defn- some-running? []
   (let [r (volatile! false)]

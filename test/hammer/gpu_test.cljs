@@ -7,7 +7,7 @@
             ;; namespace happening to load it into the bundle first.
             [hammer.fake-canvas]
             [hammer.core :as core :refer [defc]]
-            [hammer.gpu :as gpu :refer [defdraw]]
+            [hammer.gpu :as gpu :refer [defdraw defloop]]
             [hammer.state :as state]
             [hammer.testing :as t]))
 
@@ -342,3 +342,23 @@
          (is (= ["hammer: WebGPU unavailable:"] @logs) "one log for the page")
          (is (= 3 @many-unsupported) "every component is told")
          (done))))))
+
+;; ---- #12: a gpu loop's clock waits for the device
+
+(def ticks (atom []))
+
+(defloop spinner [] [] {:size [10 10]}
+  (fn [_ {:keys [t dt n]}] (swap! ticks conj [t dt n])))
+
+(deftest gpu-loop-clock-starts-when-the-device-is-ready
+  (async done
+    (fg/install! :ok)
+    (reset! ticks [])
+    (gpu/mount! [spinner] (js/document.createElement "canvas"))
+    (t/frame! 0) (t/frame! 16) (t/frame! 32)
+    (is (empty? @ticks) "device pending: no draw arg, nothing drawn")
+    (fg/settle
+     (fn []
+       (t/frame! 1000) (t/frame! 1016)
+       (is (= [[0 0 1] [16 16 2]] @ticks) "the pending frames did not advance t or n")
+       (done)))))
