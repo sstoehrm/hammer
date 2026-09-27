@@ -8,8 +8,9 @@
 (defonce adapter-request
   (atom nil)) ; :deferred mode: {:resolve (fn []) :reject (fn [e])} of the pending requestAdapter
 
-(defn- device []
-  (let [lost (js/Promise. (fn [res _] (reset! lose! #(res #js {:reason "unknown"}))))]
+(defn- device [mode]
+  (let [lost (when-not (= mode :bad-device)
+               (js/Promise. (fn [res _] (reset! lose! #(res #js {:reason "unknown"})))))]
     #js {:id (swap! ids inc)
          :queue #js {:submit (fn [cmds] (swap! log conj [:submit (alength cmds)]))}
          :lost lost
@@ -36,9 +37,10 @@
     (reset! saved nil)))
 
 (defn install!
-  "mode: :ok, :no-adapter, :missing, or :deferred (requestAdapter stays
+  "mode: :ok, :no-adapter, :missing, :deferred (requestAdapter stays
   pending until the test calls :resolve (an :ok adapter) or :reject on
-  @adapter-request). Device ids restart at 1. Restores a previous install!
+  @adapter-request), :bad-format (getPreferredCanvasFormat throws) or
+  :bad-device (the device has no .lost promise). Device ids restart at 1. Restores a previous install!
   first, so getContext is wrapped at most once; pair with restore! in an
   :after fixture."
   [mode]
@@ -50,16 +52,19 @@
     (reset! saved {:desc (js/Object.getOwnPropertyDescriptor js/navigator "gpu")
                    :get-context prev})
     (let [adapter #js {:requestDevice (fn [] (swap! log conj [:device])
-                                        (js/Promise.resolve (device)))}
+                                        (js/Promise.resolve (device mode)))}
           gpu (case mode
                 :missing js/undefined
-                #js {:getPreferredCanvasFormat (fn [] "bgra8unorm")
+                #js {:getPreferredCanvasFormat (fn []
+                                                 (if (= mode :bad-format)
+                                                   (throw (js/Error. "no format"))
+                                                   "bgra8unorm"))
                      :requestAdapter (fn []
                                        (if (= mode :deferred)
                                          (js/Promise. (fn [res rej]
                                                         (reset! adapter-request
                                                                 {:resolve #(res adapter) :reject rej})))
-                                         (js/Promise.resolve (when (= mode :ok) adapter))))})]
+                                         (js/Promise.resolve (when-not (= mode :no-adapter) adapter))))})]
       (js/Object.defineProperty js/navigator "gpu" #js {:value gpu :configurable true :writable true}))
     (set! (.-getContext proto)
           (fn [kind]

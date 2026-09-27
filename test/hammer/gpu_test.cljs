@@ -210,3 +210,32 @@
             (is (zero? @errs))
             (is (= [1] @dev-ids) "the current device keeps drawing")
             (done))))))))
+
+;; ---- #6: a throw after the device resolves is routed to unsupported!, not
+;; left as an unhandled promise rejection
+
+(defn- no-unhandled-rejection-test [mode done]
+  (fg/install! mode)
+  (reset! unsupported [])
+  (let [rejections (atom [])
+        on-rej (fn [r _] (swap! rejections conj r))
+        orig js/console.error
+        logs (atom [])]
+    (.on js/process "unhandledRejection" on-rej)
+    (set! js/console.error (fn [& args] (swap! logs conj (first args))))
+    (gpu/mount! [tri] (js/document.createElement "canvas"))
+    (js/setTimeout
+     (fn []
+       (.off js/process "unhandledRejection" on-rej)
+       (set! js/console.error orig)
+       (is (empty? @rejections) "no unhandled promise rejection")
+       (is (= 1 (count @unsupported)) "the waiting component gets :on-unsupported")
+       (is (= ["hammer: WebGPU unavailable:"] @logs) "logged once, as unavailable")
+       (done))
+     10)))
+
+(deftest throwing-preferred-canvas-format-goes-unsupported
+  (async done (no-unhandled-rejection-test :bad-format done)))
+
+(deftest throw-inside-ready-goes-unsupported
+  (async done (no-unhandled-rejection-test :bad-device done)))

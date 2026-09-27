@@ -52,6 +52,7 @@
 
 (defn- unsupported! [reason]
   (set! (.-status dev) :unsupported)
+  (set! (.-device dev) nil)
   (set! (.-reason dev) reason)
   (js/console.error "hammer: WebGPU unavailable:" reason)
   (.forEach (.-waiting dev) fallback!)
@@ -99,16 +100,23 @@
         ;; the failure callback of each `.then` is passed as its second arg
         ;; (not chained on afterwards via `.catch`) so it only fires for an
         ;; actual requestAdapter/requestDevice rejection -- an exception
-        ;; thrown by ready! itself (already guarded above) or by unsupported!
-        ;; (guarded in fallback!) can never be mistaken for one and re-log or
-        ;; re-run the unsupported path.
+        ;; thrown by ready! (caught below, reported once via unsupported!) or
+        ;; by unsupported! (guarded in fallback!) can never be mistaken for
+        ;; one and re-log or re-run the unsupported path.
         (.then (.requestAdapter gpu)
                (fn [^js a]
                  (when (current?)
                    (if-not a
                      (unsupported! "no WebGPU adapter")
                      (.then (.requestDevice a)
-                            (fn [d] (when (current?) (ready! d (.getPreferredCanvasFormat gpu))))
+                            (fn [d]
+                              (when (current?)
+                                ;; getPreferredCanvasFormat or ready!'s own
+                                ;; body (outside its per-state try) throwing
+                                ;; leaves no usable device: report it as
+                                ;; unsupported instead of an unhandled rejection.
+                                (try (ready! d (.getPreferredCanvasFormat gpu))
+                                     (catch :default e (unsupported! (str e))))))
                             (fn [e] (when (current?) (unsupported! (str e))))))))
                (fn [e] (when (current?) (unsupported! (str e)))))))))
 
