@@ -1,0 +1,30 @@
+{:nodes {:t1 {:name "1. Shared macro helpers + hammer.app" :state :new}
+         :t2 {:name "2. Per-component runners + DOM host hook" :state :new}
+         :t3 {:name "3. hammer.draw runtime + hammer.canvas/defdraw" :state :new}
+         :t4 {:name "4. defloop" :state :new}
+         :t5 {:name "5. Canvas events (:on-*)" :state :new}
+         :t6 {:name "6. Auto size, zero size, resize" :state :new}
+         :t7 {:name "7. hammer.gpu" :state :new}
+         :t8 {:name "8. Three bundles + bb sizes" :state :new}
+         :t9 {:name "9. Examples + docs" :state :new}
+         :t10 {:name "10. No regression for DOM apps" :state :new}}
+ :edges {[:t1 :t2] {:direction :->}
+         [:t2 :t3] {:direction :->}
+         [:t3 :t4] {:direction :->}
+         [:t3 :t5] {:direction :->}
+         [:t3 :t6] {:direction :->}
+         [:t3 :t7] {:direction :->}
+         [:t7 :t8] {:direction :->}
+         [:t4 :t9] {:direction :->}
+         [:t5 :t9] {:direction :->}
+         [:t6 :t9] {:direction :->}
+         [:t8 :t9] {:direction :->}
+         [:t9 :t10] {:direction :->}}
+ :boxes {:runtime {:name "shared runtime" :type "layer" :components #{:t1}
+                   :ref "2026-09-27-canvas-gpu-draw.edn"}
+         :renderers {:name "renderers" :type "layer" :components #{:t2 :t3 :t4 :t5 :t6}
+                     :ref "2026-09-27-canvas-gpu-draw.edn"}
+         :facades {:name "facades" :type "layer" :components #{:t7 :t9}
+                   :ref "2026-09-27-canvas-gpu-draw.edn"}
+         :builds {:name "size builds" :type "layer" :components #{:t8 :t10}
+                  :ref "2026-09-27-canvas-gpu-draw.edn"}}}
