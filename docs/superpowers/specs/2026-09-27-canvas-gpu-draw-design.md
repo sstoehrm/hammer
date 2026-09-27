@@ -154,9 +154,13 @@ data rendered by user code.
    bindings; if a slot the draw fn or opts name changed, the instance is queued for the
    next animation frame. It is never drawn in the microtask.
 3. At the frame: every queued or running draw instance is drawn once, in mount order.
-   A running `defloop`'s clock (`:t :dt :n`) advances only on frames that actually draw
-   it; while it can't draw (zero size, no draw context yet, a failed render or `:init`)
-   `:t` and `:n` stand still, and the next drawn frame gets `:dt` 0. The browser paints.
+   A running `defloop`'s clock (`:t :dt :n`) advances on every frame it draws —
+   including one where the last opts/draw-fn re-evaluation failed, since a running
+   loop ignores that failure and keeps drawing with the previous opts/draw fn (see
+   Errors). It stands still only while the instance truly can't draw: zero size, no
+   draw context yet (e.g. the GPU device pending), no draw fn yet, or `:init` failed;
+   then `:t` and `:n` stand still, and the next drawn frame gets `:dt` 0. The browser
+   paints.
 
 Many events between two frames produce one draw per instance. DOM components keep
 their microtask flush.
@@ -179,8 +183,11 @@ their microtask flush.
 ### Errors
 
 - A throwing draw fn, `:init` or opt expression is logged by component name. The
-  canvas keeps its last content, and the instance draws again on its next trigger. A
-  loop keeps running.
+  canvas keeps its last content, and the instance draws again on its next trigger
+  (a `defdraw`, or a paused `defloop`, doesn't redraw until a render succeeds). A
+  running `defloop` keeps going: it keeps drawing every frame with the previous
+  opts/draw fn, and its clock (`:t`/`:n`) keeps advancing, exactly as if the failed
+  re-evaluation hadn't happened.
 - `:init` throwing: the component does not draw until remounted, or until device loss
   triggers a re-init.
 

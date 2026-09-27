@@ -114,8 +114,11 @@ that, each frame, calls `draw!` on every queued or running instance once, in mou
 order (`State.order`, an increasing sequence number), before the browser paints. A
 running `defloop`'s clock (`:t`/`:dt`/`:n`, `advance!`) moves only on frames where it
 actually draws: while it can't (zero size, no draw arg yet — e.g. the GPU device is
-pending — no draw fn, a failed render or `:init`), `:t` and `:n` stand still and
-`State.last` is reset, so the next drawn frame gets `:dt` 0.
+pending — no draw fn, or a failed `:init`), `:t` and `:n` stand still and `State.last`
+is reset, so the next drawn frame gets `:dt` 0. A failed opts/draw-fn re-evaluation
+(`broken`) does *not* stop a running loop: `will-draw?` lets it keep drawing with the
+previous opts/f, clock included — only a `defdraw` or a non-running `defloop` actually
+stands still on that failure.
 
 State (the canvas element, DPR, size, listeners, the current opts/draw fn, `:init`
 result, loop timing) is kept in `hammer.draw/State`, held in **the instance's `vnode`
