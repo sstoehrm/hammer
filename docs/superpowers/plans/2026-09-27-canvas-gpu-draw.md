@@ -12,6 +12,8 @@
 
 **Spec:** `docs/superpowers/specs/2026-09-27-canvas-gpu-draw-design.md`. Read it first.
 
+> **Historical note (after implementation):** this plan is kept as written. Names changed during implementation: `hammer.draw/run!` in the code below is `hammer.draw/run-host!` in `src/hammer/draw.cljs` (renamed so it no longer shadows `cljs.core/run!`). The source and `.claude/skills/hammer-internals/SKILL.md` are authoritative.
+
 ## Global Constraints
 
 - Base: branch `canvas/draw` (from `perf2/slim`), worktree `/home/soeren/repos/private/hammer-perf/canvas-draw`.

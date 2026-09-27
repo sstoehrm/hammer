@@ -13,8 +13,14 @@
   (m/draw-def &env "defdraw" :gpu false cname props bindings more))
 
 (defmacro defloop
-  "Like defdraw, but redrawn every animation frame while mounted and :run? is
-  truthy; info also has :t :dt :n. :fallback, if given, is the same static
-  hiccup-only option defdraw takes (see defdraw)."
+  "(defloop name [props*] [bindings*] opts? draw-fn): like defdraw (same
+  props, bindings, opts and draw-fn), but also redrawn every animation frame
+  while mounted and :run? (default true) is truthy. info also has :t (ms of
+  running time; frozen while paused), :dt (ms since the previous frame,
+  capped at :max-dt, default 100; 0 for a redraw while paused) and :n (frame
+  count). :fallback, when given, is static: plain hiccup only, no
+  components, no :on-* handlers, no :ref. It is rendered once via
+  hammer.dom's host-render (DOM embedding only), never mounted or unmounted
+  as a component tree, so nothing in it is reactive."
   [cname props bindings & more]
   (m/draw-def &env "defloop" :gpu true cname props bindings more))
