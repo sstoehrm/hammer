@@ -1,0 +1,41 @@
+{:nodes {:events {:name "hammer.events / state" :type "runtime" :desc "event queue, app-db"}
+         :trie {:name "hammer.trie" :type "runtime" :desc "path subscriptions, is? index"}
+         :cells {:name "hammer.cells" :type "runtime" :desc "instances, bindings; Comp gains runner + host"}
+         :scheduler {:name "hammer.scheduler" :type "runtime" :desc "microtask flush; calls per-component runner"}
+         :app {:name "hammer.app" :type "api" :desc "reg-event reg-fx dispatch dispatch-sync is?"}
+         :macros {:name "hammer.macros (clj)" :type "macro" :desc "binding-spec, deps-of, is? detection"}
+         :dom {:name "hammer.dom" :type "renderer" :desc "DOM + templates; host hook for foreign components"}
+         :core {:name "hammer.core" :type "facade" :desc "DOM facade: app API + defc + mount! (unchanged)"}
+         :draw {:name "hammer.draw" :type "renderer" :desc "draw runner, rAF queue + loop, canvas host (DPR, resize, events)"}
+         :canvas {:name "hammer.canvas" :type "facade" :desc "Canvas 2D: app API + defdraw/defloop + mount!"}
+         :gpu {:name "hammer.gpu" :type "facade" :desc "WebGPU: app API + defdraw/defloop + mount! + device mgmt + pass"}
+         :size-dom {:name "size/dom" :type "build" :desc "must not contain draw/canvas/gpu"}
+         :size-canvas {:name "size/canvas" :type "build" :desc "must not contain dom/gpu"}
+         :size-gpu {:name "size/gpu" :type "build" :desc "must not contain dom/canvas"}
+         :bb-sizes {:name "bb sizes" :type "tooling" :desc "gzip sizes + namespace checks"}}
+ :edges {[:trie :cells] {:direction :-> :name "mark!"}
+         [:cells :scheduler] {:direction :-> :name "schedule!"}
+         [:events :trie] {:direction :-> :name "notify!"}
+         [:app :events] {:direction :-> :name "uses"}
+         [:core :app] {:direction :-> :name "re-exports"}
+         [:core :dom] {:direction :-> :name "requires"}
+         [:canvas :app] {:direction :-> :name "re-exports"}
+         [:canvas :draw] {:direction :-> :name "requires"}
+         [:gpu :app] {:direction :-> :name "re-exports"}
+         [:gpu :draw] {:direction :-> :name "requires"}
+         [:scheduler :dom] {:direction :-> :name "DOM runner (microtask)"}
+         [:scheduler :draw] {:direction :-> :name "draw runner (→ next rAF)"}
+         [:dom :draw] {:direction :<- :name "host hook (dom never requires draw)" :type "plugin"}
+         [:macros :core] {:direction :-> :name "defc"}
+         [:macros :canvas] {:direction :-> :name "defdraw/defloop"}
+         [:macros :gpu] {:direction :-> :name "defdraw/defloop"}
+         [:size-dom :core] {:direction :-> :name "builds"}
+         [:size-canvas :canvas] {:direction :-> :name "builds"}
+         [:size-gpu :gpu] {:direction :-> :name "builds"}
+         [:bb-sizes :size-dom] {:direction :-> :name "checks"}
+         [:bb-sizes :size-canvas] {:direction :-> :name "checks"}
+         [:bb-sizes :size-gpu] {:direction :-> :name "checks"}}
+ :boxes {:runtime {:name "shared runtime" :type "layer" :components #{:events :trie :cells :scheduler :app :macros}}
+         :renderers {:name "renderers" :type "layer" :components #{:dom :draw}}
+         :facades {:name "facades (what apps require)" :type "layer" :components #{:core :canvas :gpu}}
+         :builds {:name "size builds" :type "layer" :components #{:size-dom :size-canvas :size-gpu :bb-sizes}}}}
