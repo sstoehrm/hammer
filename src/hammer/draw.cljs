@@ -339,6 +339,7 @@
 
 ;; ---- standalone mounting
 
+;; el → (fn []) that unmounts the root mounted there
 (defonce ^:private roots (js/Map.))
 
 (defn- destroy-inst! [^cells/Instance inst]
@@ -355,26 +356,33 @@
        ;; forget it first: if the new create below throws, roots must not
        ;; still point at this destroyed instance.
        (.delete roots el)
-       (destroy-inst! old))
+       (old))
      (let [canvas? (= "CANVAS" (.-tagName el))
            inst (cells/create c hiccup 1 1)]
        (when-not canvas? (set! (.-textContent el) ""))
-       (let [n (try
-                 ((.-create h) inst nil (when canvas? el))
-                 (catch :default e
-                   ;; the instance's bindings already subscribed paths in
-                   ;; cells/create above; without this, a failed create leaks
-                   ;; that subscription forever.
-                   (cells/destroy! inst)
-                   (throw e)))]
-         (when-not canvas? (.appendChild el n)))
-       (.set roots el inst))))
+       (let [^js n (try
+                     ((.-create h) inst nil (when canvas? el))
+                     (catch :default e
+                       ;; the instance's bindings already subscribed paths in
+                       ;; cells/create above; without this, a failed create leaks
+                       ;; that subscription forever.
+                       (cells/destroy! inst)
+                       (throw e)))]
+         (when-not canvas? (.appendChild el n))
+         (.set roots el
+               (fn []
+                 (destroy-inst! inst)
+                 ;; a canvas mount! created goes too; an adopted one stays.
+                 (when (and (not canvas?) (identical? el (.-parentNode n)))
+                   (.removeChild el n))))))))
   ([hiccup el db]
    (events/set-db! db)
    (mount! hiccup el)))
 
 (defn unmount-all!
-  "Unmounts every standalone root."
+  "Unmounts every standalone root and removes the canvases mount! created
+  (adopted <canvas> elements stay)."
   []
-  (.forEach roots (fn [inst _] (destroy-inst! inst)))
-  (.clear roots))
+  (let [fs (js/Array.from (.values roots))]
+    (.clear roots)
+    (.forEach fs (fn [f] (f)))))

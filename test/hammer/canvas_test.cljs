@@ -390,3 +390,16 @@
     (is (= 1 @teardowns) "the old root was destroyed by the replacement")
     (t/reset-app!)
     (is (= 1 @teardowns) "unmount-all! does not destroy it a second time")))
+
+(deftest unmount-all-removes-created-canvases-and-keeps-adopted-ones
+  (reset! state/app-db {:n 1})
+  (let [host (div)
+        wrap (div)
+        c (js/document.createElement "canvas")]
+    (.appendChild wrap c)
+    (cv/mount! [bars "red" "made"] host)
+    (cv/mount! [bars "red" "adopted"] c)
+    (is (= 1 (.. host -childNodes -length)))
+    (t/reset-app!)
+    (is (zero? (.. host -childNodes -length)) "the canvas mount! created is removed from its container")
+    (is (identical? wrap (.-parentNode c)) "an adopted canvas stays where it was")))
