@@ -1,5 +1,7 @@
-{:source-paths ["src" "test" "examples/todomvc/src" "size"]
- :dev-http {8280 "examples/todomvc/public"}
+{:source-paths ["src" "test" "examples/todomvc/src" "examples/canvas/src" "examples/gpu/src" "size"]
+ :dev-http {8280 "examples/todomvc/public"
+            8290 "examples/canvas/public"
+            8291 "examples/gpu/public"}
  :builds {:test {:target :node-test
                  :output-to "target/test.js"
                  :ns-regexp "-test$"}
@@ -7,6 +9,10 @@
                     :output-dir "examples/todomvc/public/js"
                     :asset-path "/js"
                     :modules {:main {:init-fn todomvc.core/main}}}
+          :canvas-demo {:target :browser :output-dir "examples/canvas/public/js" :asset-path "/js"
+                        :modules {:main {:init-fn canvas-demo.core/main}}}
+          :gpu-demo {:target :browser :output-dir "examples/gpu/public/js" :asset-path "/js"
+                     :modules {:main {:init-fn gpu-demo.core/main}}}
           :size-dom {:target :browser :output-dir "target/size/size-dom" :asset-path "."
                      :modules {:main {:init-fn size.dom/main}}}
           :size-canvas {:target :browser :output-dir "target/size/size-canvas" :asset-path "."
