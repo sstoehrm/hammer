@@ -351,7 +351,11 @@
    (let [c (nth hiccup 0 nil)
          ^cells/Host h (when (cells/component? c) (cells/host c))]
      (when-not h (throw (js/Error. "hammer: mount! takes a draw component vector, e.g. [chart]")))
-     (when-let [old (.get roots el)] (destroy-inst! old))
+     (when-let [old (.get roots el)]
+       ;; forget it first: if the new create below throws, roots must not
+       ;; still point at this destroyed instance.
+       (.delete roots el)
+       (destroy-inst! old))
      (let [canvas? (= "CANVAS" (.-tagName el))
            inst (cells/create c hiccup 1 1)]
        (when-not canvas? (set! (.-textContent el) ""))

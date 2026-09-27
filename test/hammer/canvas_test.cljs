@@ -364,3 +364,29 @@
       (is (= [10 10] [(.-width c) (.-height c)]) "nothing will draw, so the canvas is not resized (cleared)")
       (is (zero? @failed-init-draws))
       (finally (set! js/console.error orig)))))
+
+;; ---- #13 / #14 / #15: standalone roots
+
+(def teardowns (atom 0))
+
+(draw/register-backend!
+ :counting
+ (draw/Backend. (fn [st _render] (.-canvas ^draw/State st))
+                (fn [_st] nil)
+                (fn [_st] nil)
+                (fn [_st] (swap! teardowns inc))))
+
+(def counted
+  "A draw component on a backend that counts teardowns."
+  (draw/component "counted" 0 [] [] (fn [] (cljs.core/array {:size [10 10]} (fn [_ _] nil)))
+                  :counting false))
+
+(deftest failed-replacement-mount-does-not-destroy-the-old-root-twice
+  (reset! state/app-db {:n 1})
+  (reset! teardowns 0)
+  (let [el (div)]
+    (cv/mount! [counted] el)
+    (is (thrown? js/Error (cv/mount! [boom-comp] el)) "the replacement's setup! throws")
+    (is (= 1 @teardowns) "the old root was destroyed by the replacement")
+    (t/reset-app!)
+    (is (= 1 @teardowns) "unmount-all! does not destroy it a second time")))
