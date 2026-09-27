@@ -307,3 +307,60 @@
          (expand-error (hammer.canvas/defdraw bad [] [a (is? [:x])] (fn [_ _])))))
   (is (= "defloop: is? takes a path and a value"
          (expand-error (hammer.gpu/defloop bad [] [a (is? [:x])] (fn [_ _]))))))
+
+;; ---- #11: a failed render or :init keeps the canvas's last content
+
+(def opt-draws (atom []))
+
+(defdraw opt-throws [] [x [:x]]
+  {:size [10 10] :attrs {:id (if (= x :bad) (throw (js/Error. "bad opts")) "ot")}}
+  (fn [_ _] (swap! opt-draws conj x)))
+
+(deftest throwing-opts-keep-last-content-until-a-good-render
+  (reset! state/app-db {:x 1})
+  (reset! opt-draws [])
+  (let [host (div)
+        orig js/console.error errs (atom 0)]
+    (set! js/console.error (fn [& _] (swap! errs inc)))
+    (try
+      (cv/mount! [opt-throws] host)
+      (t/frame! 16)
+      (let [c (.-firstChild host)]
+        (events/dispatch [::set :x :bad])
+        (t/frame! 32)
+        (is (= [1] @opt-draws) "no redraw with the previous draw fn after a failed render")
+        (is (= 1 @errs) "the failed render is logged")
+        (set! (.-devicePixelRatio js/globalThis) 2)
+        (.dispatchEvent js/window (new (.-Event js/window) "resize"))
+        (t/frame! 48)
+        (is (= [10 10] [(.-width c) (.-height c)]) "backing store untouched (not cleared) while the render is failed")
+        (is (= [1] @opt-draws))
+        (events/dispatch [::set :x 3])
+        (t/frame! 64)
+        (is (= [1 3] @opt-draws) "the next good render draws again")
+        (is (= [20 20] [(.-width c) (.-height c)])))
+      (finally
+        (js-delete js/globalThis "devicePixelRatio")
+        (set! js/console.error orig)))))
+
+(def failed-init-draws (atom 0))
+
+(defdraw init-fails [] [w [:w]]
+  {:size [w 10] :init (fn [_ _] (throw (js/Error. "init boom")))}
+  (fn [_ _ _] (swap! failed-init-draws inc)))
+
+(deftest failed-init-leaves-the-backing-store-alone-on-resize
+  (reset! state/app-db {:w 10})
+  (reset! failed-init-draws 0)
+  (let [c (js/document.createElement "canvas")
+        orig js/console.error]
+    (set! js/console.error (fn [& _]))
+    (try
+      (cv/mount! [init-fails] c)
+      (t/frame! 16)
+      (is (= [10 10] [(.-width c) (.-height c)]))
+      (events/dispatch [::set :w 30])
+      (t/frame! 32)
+      (is (= [10 10] [(.-width c) (.-height c)]) "nothing will draw, so the canvas is not resized (cleared)")
+      (is (zero? @failed-init-draws))
+      (finally (set! js/console.error orig)))))

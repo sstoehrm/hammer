@@ -16,8 +16,9 @@
 
 (defn register-backend! [kind ^Backend b] (aset backends (name kind) b))
 
+;; broken: the last render (opts/draw-fn) threw; nothing draws until one succeeds.
 (deftype State [inst backend kind loop? canvas order
-                ^:mutable opts ^:mutable f ^:mutable ctx ^:mutable res ^:mutable inited
+                ^:mutable opts ^:mutable f ^:mutable broken ^:mutable ctx ^:mutable res ^:mutable inited
                 ^:mutable w ^:mutable h ^:mutable dpr
                 ^:mutable t ^:mutable last ^:mutable n ^:mutable running
                 listeners ^:mutable observer ^:mutable attrs ^:mutable alive ^:mutable ext])
@@ -199,8 +200,15 @@
   (set! (.-res st) nil)
   (set! (.-inited st) false))
 
+(defn- will-draw?
+  "False while nothing can draw (no draw fn yet, last render failed, :init
+  failed): the frame then leaves the canvas, and its last content, alone."
+  [^State st]
+  (and (.-alive st) (some? (.-f st)) (not (.-broken st))
+       (not (keyword-identical? :failed (.-inited st)))))
+
 (defn- draw! [^State st ts]
-  (when (.-alive st)
+  (when (will-draw? st)
     (let [dt (advance! st ts)]
       (sync-size! st)
       (let [f (.-f st)
@@ -236,21 +244,26 @@
 ;; ---- instances
 
 (defn- rerender!
-  "Re-evaluates opts and the draw fn from the instance's current bindings."
+  "Re-evaluates opts and the draw fn from the instance's current bindings and
+  queues a draw. If that throws, it is logged and the state is broken: the
+  previous opts stay, and nothing is queued or drawn until a render succeeds."
   [^State st]
-  (try
-    (let [out (cells/render (.-inst st))]
-      (set! (.-opts st) (or (aget out 0) {}))
-      (set! (.-f st) (aget out 1)))
-    (catch :default e (js/console.error "hammer: render failed in" (cname st) e)))
-  (apply-size! st)
-  (apply-attrs! st)
-  (sync-listeners! st)
-  (when (.-loop? st)
-    (let [r (boolean (get (.-opts st) :run? true))]
-      (when-not r (set! (.-last st) nil))
-      (set! (.-running st) r)))
-  (queue! st))
+  (if-let [out (try (cells/render (.-inst st))
+                    (catch :default e
+                      (js/console.error "hammer: render failed in" (cname st) e)
+                      nil))]
+    (do (set! (.-broken st) false)
+        (set! (.-opts st) (or (aget out 0) {}))
+        (set! (.-f st) (aget out 1))
+        (apply-size! st)
+        (apply-attrs! st)
+        (sync-listeners! st)
+        (when (.-loop? st)
+          (let [r (boolean (get (.-opts st) :run? true))]
+            (when-not r (set! (.-last st) nil))
+            (set! (.-running st) r)))
+        (queue! st))
+    (set! (.-broken st) true)))
 
 (defn- run-host!
   "Host run: recompute bindings; if the draw fn or opts depend on a change,
@@ -292,7 +305,7 @@
     (when-not backend
       (throw (js/Error. (str "hammer: no " (name kind) " backend loaded (require hammer." (name kind) ")"))))
     (let [st (State. inst backend kind loop? (or el (js/document.createElement "canvas")) (vswap! seq-no inc)
-                     {} nil nil nil false
+                     {} nil false nil nil false
                      0 0 1
                      0 nil 0 false
                      (js/Map.) nil nil true nil)]
