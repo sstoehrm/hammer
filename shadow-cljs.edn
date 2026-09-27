@@ -1,4 +1,4 @@
-{:source-paths ["src" "test" "examples/todomvc/src"]
+{:source-paths ["src" "test" "examples/todomvc/src" "size"]
  :dev-http {8280 "examples/todomvc/public"}
  :builds {:test {:target :node-test
                  :output-to "target/test.js"
@@ -6,4 +6,10 @@
           :todomvc {:target :browser
                     :output-dir "examples/todomvc/public/js"
                     :asset-path "/js"
-                    :modules {:main {:init-fn todomvc.core/main}}}}}
+                    :modules {:main {:init-fn todomvc.core/main}}}
+          :size-dom {:target :browser :output-dir "target/size/size-dom" :asset-path "."
+                     :modules {:main {:init-fn size.dom/main}}}
+          :size-canvas {:target :browser :output-dir "target/size/size-canvas" :asset-path "."
+                        :modules {:main {:init-fn size.canvas/main}}}
+          :size-gpu {:target :browser :output-dir "target/size/size-gpu" :asset-path "."
+                     :modules {:main {:init-fn size.gpu/main}}}}}
