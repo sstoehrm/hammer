@@ -3,22 +3,25 @@
   (:require [hammer.test-env]))
 
 (defonce log (atom []))
-(defonce lose! (atom nil))
+(defonce lose! (atom nil)) ; resolves the newest device's .lost; optional arg: reason (default "unknown")
+(defonce clears (atom [])) ; [r g b a] clearValue of every render pass
 (defonce ^:private ids (atom 0))
 (defonce adapter-request
   (atom nil)) ; :deferred mode: {:resolve (fn []) :reject (fn [e])} of the pending requestAdapter
 
 (defn- device [mode]
   (let [lost (when-not (= mode :bad-device)
-               (js/Promise. (fn [res _] (reset! lose! #(res #js {:reason "unknown"})))))]
+               (js/Promise. (fn [res _] (reset! lose! (fn [& [reason]] (res #js {:reason (or reason "unknown")}))))))]
     #js {:id (swap! ids inc)
          :queue #js {:submit (fn [cmds] (swap! log conj [:submit (alength cmds)]))}
          :lost lost
          :createCommandEncoder
          (fn []
            #js {:beginRenderPass (fn [^js d]
-                                   (let [a (aget (.-colorAttachments d) 0)]
-                                     (swap! log conj [:pass (.-loadOp a) (.. a -clearValue -a)]))
+                                   (let [a (aget (.-colorAttachments d) 0)
+                                         cv (.-clearValue a)]
+                                     (swap! clears conj [(.-r cv) (.-g cv) (.-b cv) (.-a cv)])
+                                     (swap! log conj [:pass (.-loadOp a) (.-a cv)]))
                                    #js {:end (fn [] (swap! log conj [:end]))
                                         :draw (fn [n] (swap! log conj [:draw n]))})
                 :finish (fn [] #js {})})}))
@@ -39,20 +42,24 @@
 (defn install!
   "mode: :ok, :no-adapter, :missing, :deferred (requestAdapter stays
   pending until the test calls :resolve (an :ok adapter) or :reject on
-  @adapter-request), :bad-format (getPreferredCanvasFormat throws) or
-  :bad-device (the device has no .lost promise). Device ids restart at 1. Restores a previous install!
+  @adapter-request), :bad-format (getPreferredCanvasFormat throws),
+  :bad-device (the device has no .lost promise) or :device-rejects
+  (requestDevice rejects). Device ids restart at 1. Restores a previous install!
   first, so getContext is wrapped at most once; pair with restore! in an
   :after fixture."
   [mode]
   (restore!)
   (reset! log [])
+  (reset! clears [])
   (reset! ids 0)
   (let [proto (.. js/window -HTMLCanvasElement -prototype)
         prev (.-getContext proto)]
     (reset! saved {:desc (js/Object.getOwnPropertyDescriptor js/navigator "gpu")
                    :get-context prev})
     (let [adapter #js {:requestDevice (fn [] (swap! log conj [:device])
-                                        (js/Promise.resolve (device mode)))}
+                                        (if (= mode :device-rejects)
+                                          (js/Promise.reject (js/Error. "device refused"))
+                                          (js/Promise.resolve (device mode))))}
           gpu (case mode
                 :missing js/undefined
                 #js {:getPreferredCanvasFormat (fn []

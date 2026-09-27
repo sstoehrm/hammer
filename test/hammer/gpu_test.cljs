@@ -240,3 +240,105 @@
 
 (deftest throw-inside-ready-goes-unsupported
   (async done (no-unhandled-rejection-test :bad-device done)))
+
+;; ---- #8: untested lifecycle paths
+
+(deftest unmount-while-device-pending-never-configures
+  (async done
+    (fg/install! :deferred)
+    (reset! inits 0)
+    (reset! state/app-db {:n 1})
+    (gpu/mount! [tri] (js/document.createElement "canvas"))
+    (t/reset-app!)
+    ((:resolve @fg/adapter-request))
+    (fg/settle
+     (fn []
+       (t/frame! 16)
+       (is (= [[:device]] @fg/log) "the device arrives, but the unmounted component is no longer waiting")
+       (is (zero? @inits))
+       (done)))))
+
+(defn- ready-then [f]
+  (fg/install! :ok)
+  (reset! state/app-db {:n 1})
+  (reset! inits 0)
+  (gpu/mount! [tri] (js/document.createElement "canvas"))
+  (fg/settle (fn [] (t/frame! 16) (reset! fg/log []) (f))))
+
+(deftest lost-with-reason-destroyed-is-ignored
+  (async done
+    (ready-then
+     (fn []
+       (@fg/lose! "destroyed")
+       (fg/settle
+        (fn []
+          (t/frame! 32)
+          (is (= [] @fg/log) "no dispose, no new device request, nothing to redraw")
+          (is (= 1 @inits))
+          (done)))))))
+
+(deftest lost-from-a-replaced-device-is-ignored
+  (async done
+    (ready-then
+     (fn []
+       (let [lose-old @fg/lose!]
+         (gpu/reset-device!)
+         (t/reset-app!)
+         (ready-then
+          (fn []
+            (lose-old)
+            (fg/settle
+             (fn []
+               (t/frame! 32)
+               (is (= [] @fg/log) "the old device's loss does not dispose or re-acquire")
+               (is (= 1 @inits))
+               (done))))))))))
+
+(deftest request-device-rejecting-is-unsupported
+  (async done
+    (fg/install! :device-rejects)
+    (reset! unsupported [])
+    (let [orig js/console.error logs (atom [])]
+      (set! js/console.error (fn [& args] (swap! logs conj (vec args))))
+      (gpu/mount! [tri] (js/document.createElement "canvas"))
+      (fg/settle
+       (fn []
+         (set! js/console.error orig)
+         (is (= 1 (count @unsupported)))
+         (is (= ["hammer: WebGPU unavailable:" "Error: device refused"] (first @logs)))
+         (done))))))
+
+(defdraw no-clear [] [] {:size [10 10]}
+  (fn [g _] (gpu/pass g {} (fn [_]))))
+
+(deftest pass-without-clear-clears-to-transparent-black
+  (async done
+    (fg/install! :ok)
+    (gpu/mount! [no-clear] (js/document.createElement "canvas"))
+    (fg/settle
+     (fn []
+       (t/frame! 16)
+       (is (= [[0 0 0 0]] @fg/clears))
+       (done)))))
+
+(def many-unsupported (atom 0))
+
+(defdraw quiet [] [] {:size [10 10] :on-unsupported (fn [_] (swap! many-unsupported inc))}
+  (fn [_ _]))
+
+(deftest unavailable-is-logged-once-for-many-components
+  (async done
+    (reset! many-unsupported 0)
+    (let [orig js/console.error logs (atom [])]
+      (set! js/console.error (fn [& args] (swap! logs conj (first args))))
+      (fg/install! :no-adapter)
+      ;; two mount while the request is pending, one after it failed
+      (gpu/mount! [quiet] (js/document.createElement "canvas"))
+      (gpu/mount! [quiet] (js/document.createElement "canvas"))
+      (fg/settle
+       (fn []
+         (gpu/mount! [quiet] (js/document.createElement "canvas"))
+         (set! js/console.error orig)
+         (is (= ["hammer: WebGPU unavailable:"] @logs) "one log for the page")
+         (is (= 3 @many-unsupported) "every component is told")
+         (done))))))
