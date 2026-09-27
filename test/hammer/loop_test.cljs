@@ -32,6 +32,15 @@
   (t/frame! 1000) (t/frame! 1016) (t/frame! 2000)
   (is (= [[:a 0 0 1] [:a 16 16 2] [:a 66 50 3]] @seen) "dt capped at :max-dt"))
 
+(defloop uncapped [] [] {:size [10 10]}
+  (fn [_ {:keys [dt]}] (swap! seen conj [:uncapped dt])))
+
+(deftest default-max-dt-is-100
+  (reset! state/app-db {})
+  (cv/mount! [uncapped] (div))
+  (t/frame! 0) (t/frame! 16) (t/frame! 2000)
+  (is (= [[:uncapped 0] [:uncapped 16] [:uncapped 100]] @seen) "default :max-dt is 100"))
+
 (deftest pause-freezes-t-and-redraws-on-change-with-dt-0
   (reset! state/app-db {:paused? false :x 1})
   (cv/mount! [ticker :a] (div))

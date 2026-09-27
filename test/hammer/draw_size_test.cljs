@@ -56,3 +56,24 @@
   (.dispatchEvent js/window (new (.-Event js/window) "resize"))
   (t/frame! 32)
   (is (= [[10 10]] @sizes)))
+
+(def dpr-log (atom []))
+
+(defdraw fixed [] [] {:size [100 50]}
+  (fn [_ {:keys [w h dpr]}] (swap! dpr-log conj [w h dpr])))
+
+(deftest dpr-change-recomputes-backing-store-and-redraws
+  (reset! dpr-log [])
+  (let [host (js/document.createElement "div")]
+    (cv/mount! [fixed] host)
+    (t/frame! 16)
+    (let [c (.-firstChild host)]
+      (is (= [100 50] [(.-width c) (.-height c)]))
+      (reset! dpr-log [])
+      (try
+        (set! (.-devicePixelRatio js/globalThis) 2)
+        (.dispatchEvent js/window (new (.-Event js/window) "resize"))
+        (t/frame! 32)
+        (is (= [200 100] [(.-width c) (.-height c)]) "backing store recomputed for the new DPR")
+        (is (= [[100 50 2]] @dpr-log) "draw fn ran again after the DPR change")
+        (finally (js-delete js/globalThis "devicePixelRatio"))))))
