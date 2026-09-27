@@ -4,6 +4,7 @@
             [hammer.fake-canvas :as fake]
             [hammer.core :as core :refer [defc]]
             [hammer.canvas :as cv :refer [defdraw]]
+            [hammer.draw :as draw]
             [hammer.events :as events]
             [hammer.state :as state]
             [hammer.testing :as t]))
@@ -132,3 +133,107 @@
       (events/dispatch [::set :ids [3 1]])
       (t/frame! 48)
       (is (= [c3 c1] (vec (js/Array.from (.querySelectorAll host "canvas"))))))))
+
+;; ---- fix round 1: a failed create must not leak a subscription or a state
+
+(def ghost
+  "Built directly via hammer.draw/component (bypassing defdraw) so its :kind
+  is never registered: create-host's backend lookup always throws."
+  (draw/component "ghost" 0
+                   [{:kind :path :deps [] :f (fn [] [:ghost])}]
+                   [0]
+                   (fn [_g] (cljs.core/array {} (fn [_ _] nil)))
+                   :no-such-backend false))
+
+(deftest mount-with-unregistered-backend-throws-and-unsubscribes
+  (reset! state/app-db {:ghost 1})
+  (is (thrown? js/Error (cv/mount! [ghost] (div)))
+      "no backend registered for :no-such-backend")
+  (let [orig js/console.error errs (atom 0)]
+    (set! js/console.error (fn [& _] (swap! errs inc)))
+    (try
+      (events/dispatch-sync [::set :ghost 2])
+      (is (zero? @errs) "the failed instance's path subscription must not have leaked")
+      (finally (set! js/console.error orig)))))
+
+(draw/register-backend!
+ :boom-backend
+ (draw/Backend. (fn [_st _render] (throw (js/Error. "setup boom")))
+                (fn [_st] nil)
+                (fn [_st] nil)
+                (fn [_st] nil)))
+
+(def boom-comp
+  "A defloop-shaped component (loop? true) on a backend whose setup! always
+  throws, to check create-host unwinds all/queued/loops before rethrowing."
+  (draw/component "boom-comp" 0
+                   [{:kind :path :deps [] :f (fn [] [:n])}]
+                   [0]
+                   (fn [_n] (cljs.core/array {} (fn [_ _] nil)))
+                   :boom-backend true))
+
+(deftest mount-with-throwing-setup-cleans-up
+  (reset! state/app-db {:n 1})
+  (is (thrown? js/Error (cv/mount! [boom-comp] (div))))
+  (is (empty? (draw/states :boom-backend)) "no orphaned state after setup! throws")
+  (reset! fake/log [])
+  (t/frame! 16)
+  (is (empty? @fake/log) "nothing left queued or looping to draw")
+  ;; boom-comp is loop? true with default :run? true, so a leaked State left
+  ;; in the loops set would keep frame! requesting another frame forever.
+  (let [asked (atom 0)]
+    (draw/set-raf! (fn [_] (swap! asked inc)))
+    (draw/frame! 32)
+    (is (zero? @asked) "no orphaned loop keeps requesting frames")))
+
+;; ---- fix round 1: dropped :style keys must be cleared, not left stale
+
+(defdraw styled [] [mode [:mode]]
+  {:size [10 10]
+   :attrs (cond-> {:id "styled"}
+            (= mode :full) (assoc :style {:opacity "1" :color "red"})
+            (= mode :partial) (assoc :style {:opacity "0.5"}))}
+  ;; :none has no :style key at all -- exercises the "removed entirely" path,
+  ;; distinct from :partial's "still present, fewer keys" path.
+  (fn [_ctx _info]))
+
+(deftest style-attrs-follow-binding-and-clear
+  (reset! state/app-db {:mode :full})
+  (let [host (div)]
+    (cv/mount! [styled] host)
+    (t/frame! 16)
+    (let [c (.-firstChild host)]
+      (is (= "1" (.. c -style -opacity)))
+      (is (= "red" (.. c -style -color)))
+      (events/dispatch [::set :mode :partial]) (t/frame! 32)
+      (is (= "0.5" (.. c -style -opacity)))
+      (is (= "" (.. c -style -color)) "a style key dropped from the map is removed, not left stale")
+      (events/dispatch [::set :mode :none]) (t/frame! 48)
+      (is (= "" (.. c -style -opacity)) "removing :style entirely clears every property it had set")
+      (is (= "" (.. c -style -color))))))
+
+;; ---- fix round 1: switching auto size -> :size -> auto restores the box
+
+(defdraw resizy [] [mode [:mode]]
+  {:size (when (= mode :fixed) [40 20]) :attrs {:id "resizy"}}
+  (fn [_ctx _info]))
+
+(deftest auto-size-restored-after-fixed-size-cleared
+  ;; auto -> fixed -> auto: the observer created for the first auto pass
+  ;; must not stop apply-size! from restoring the auto CSS on the way back.
+  (reset! state/app-db {:mode :auto})
+  (let [host (div)]
+    (cv/mount! [resizy] host)
+    (let [c (.-firstChild host)
+          st (first (filter #(identical? c (.-canvas %)) (draw/states :canvas)))]
+      (is (= ["100%" "100%"] [(.. c -style -width) (.. c -style -height)]) "starts auto-sized")
+      (events/dispatch [::set :mode :fixed])
+      (t/flush!)
+      (is (= ["40px" "20px"] [(.. c -style -width) (.. c -style -height)]))
+      (is (= [40 20] [(.-w st) (.-h st)]))
+      (events/dispatch [::set :mode :auto])
+      (t/flush!)
+      (is (= ["100%" "100%"] [(.. c -style -width) (.. c -style -height)])
+          "auto-size CSS restored when switching back from a fixed size")
+      (is (= [(.-clientWidth c) (.-clientHeight c)] [(.-w st) (.-h st)])
+          "w/h re-measured from the live box, not left at the stale fixed value"))))

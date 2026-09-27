@@ -54,15 +54,21 @@
 
 (defn- set-css! [^js el k v] (.setProperty (.-style el) k v))
 
-(defn- observe!
-  "Auto size: the canvas fills its CSS box and follows it."
+(defn- auto-css+measure!
+  "Fills the CSS box (display/width/height) and re-reads the live size."
   [^State st]
   (let [^js c (.-canvas st)]
     (set-css! c "display" "block")
     (set-css! c "width" "100%")
     (set-css! c "height" "100%")
     (set! (.-w st) (.-clientWidth c))
-    (set! (.-h st) (.-clientHeight c))
+    (set! (.-h st) (.-clientHeight c))))
+
+(defn- observe!
+  "Auto size: the canvas fills its CSS box and follows it."
+  [^State st]
+  (auto-css+measure! st)
+  (let [^js c (.-canvas st)]
     (set! (.-observer st)
           (if (exists? js/ResizeObserver)
             (doto (js/ResizeObserver.
@@ -81,7 +87,13 @@
         (set! (.-h st) h)
         (set-css! (.-canvas st) "width" (str w "px"))
         (set-css! (.-canvas st) "height" (str h "px")))
-    (when-not (.-observer st) (observe! st))))
+    (if-not (.-observer st)
+      (observe! st)
+      ;; switching back from a fixed size: the observer is still watching the
+      ;; box, but the CSS and w/h are stuck at the old fixed values until we
+      ;; restore them here.
+      (when (not= "100%" (.. (.-canvas st) -style -width))
+        (auto-css+measure! st)))))
 
 (defn- apply-attrs! [^State st]
   (let [^js c (.-canvas st)
@@ -91,12 +103,14 @@
       (doseq [[k v] nu :when (not= v (get old k))]
         (case k
           :class (set! (.-className c) (if (coll? v) (str/join " " (remove nil? v)) (str v)))
-          :style (doseq [[sk sv] v] (set-css! c (name sk) (str sv)))
+          :style (do (doseq [[sk _] (:style old) :when (not (contains? v sk))]
+                       (.removeProperty (.-style c) (name sk)))
+                     (doseq [[sk sv] v] (set-css! c (name sk) (str sv))))
           (if (nil? v) (.removeAttribute c (name k)) (.setAttribute c (name k) (str v)))))
-      (doseq [[k _] old :when (not (contains? nu k))]
+      (doseq [[k v] old :when (not (contains? nu k))]
         (case k
           :class (set! (.-className c) "")
-          :style nil
+          :style (doseq [[sk _] v] (.removeProperty (.-style c) (name sk)))
           (.removeAttribute c (name k))))
       (set! (.-attrs st) nu))))
 
@@ -251,6 +265,20 @@
     (vreset! resize-hooked true)
     (.addEventListener js/window "resize" (fn [_] (.forEach all (fn [st] (queue! st)))))))
 
+(defn- unwind!
+  "Removes st from every registry and stops observing/listening. Used both
+  by destroy! and by create-host to roll back after setup! throws, so a
+  failed mount never leaves a state that keeps drawing or looping."
+  [^State st]
+  (let [^js c (.-canvas st)]
+    (set! (.-alive st) false)
+    (.delete all st)
+    (.delete queued st)
+    (.delete loops st)
+    (.forEach (.-listeners st) (fn [f t] (.removeEventListener c t f)))
+    (.clear (.-listeners st))
+    (some-> ^js (.-observer st) (.disconnect))))
+
 (defn- create-host [^cells/Instance inst kind loop? render el]
   (let [backend (aget backends (name kind))]
     (when-not backend
@@ -265,18 +293,15 @@
       (when loop? (.add loops st))
       (hook-resize!)
       (rerender! st)
-      ((.-setup! ^Backend backend) st render))))
+      (try
+        ((.-setup! ^Backend backend) st render)
+        (catch :default e
+          (unwind! st)
+          (throw e))))))
 
 (defn- destroy! [^cells/Instance inst]
-  (let [^State st (.-vnode inst)
-        ^js c (.-canvas st)]
-    (set! (.-alive st) false)
-    (.delete all st)
-    (.delete queued st)
-    (.delete loops st)
-    (.forEach (.-listeners st) (fn [f t] (.removeEventListener c t f)))
-    (.clear (.-listeners st))
-    (some-> ^js (.-observer st) (.disconnect))
+  (let [^State st (.-vnode inst)]
+    (unwind! st)
     (dispose! st)
     ((.-teardown! ^Backend (.-backend st)) st)
     (cells/destroy! inst)))
@@ -307,7 +332,14 @@
      (let [canvas? (= "CANVAS" (.-tagName el))
            inst (cells/create c hiccup 1 1)]
        (when-not canvas? (set! (.-textContent el) ""))
-       (let [n ((.-create h) inst nil (when canvas? el))]
+       (let [n (try
+                 ((.-create h) inst nil (when canvas? el))
+                 (catch :default e
+                   ;; the instance's bindings already subscribed paths in
+                   ;; cells/create above; without this, a failed create leaks
+                   ;; that subscription forever.
+                   (cells/destroy! inst)
+                   (throw e)))]
          (when-not canvas? (.appendChild el n)))
        (.set roots el inst))))
   ([hiccup el db]
