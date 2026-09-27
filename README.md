@@ -159,7 +159,9 @@ as usual) renders its own `<canvas>` in place. To mount one standalone on a
 canvas, without `hammer.core`/`hammer.dom` in the bundle, use
 `hammer.canvas/mount!` or `hammer.gpu/mount!` — same shape as `hammer.core/mount!`,
 taking `(hiccup el)` or `(hiccup el db)`; `el` is an existing `<canvas>`
-(adopted as-is) or a container (a canvas is created inside it).
+(adopted as-is) or a container (a canvas is created inside it). All three
+`mount!`s share one root registry: mounting any of them on an element first
+unmounts whatever another one mounted there.
 
 `bb sizes` builds the three size-check bundles (`hammer.core`-only,
 `hammer.canvas`-only, `hammer.gpu`-only), prints each one's raw and gzip size,

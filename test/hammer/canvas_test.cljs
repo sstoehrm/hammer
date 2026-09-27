@@ -403,3 +403,36 @@
     (t/reset-app!)
     (is (zero? (.. host -childNodes -length)) "the canvas mount! created is removed from its container")
     (is (identical? wrap (.-parentNode c)) "an adopted canvas stays where it was")))
+
+(defc label [] [x [:x]] [:p (str x)])
+
+(def spins (atom 0))
+
+(cv/defloop spin [] [] {:size [10 10]} (fn [_ _] (swap! spins inc)))
+
+(deftest canvas-mount-replaces-a-dom-root-on-the-same-element
+  (reset! state/app-db {:x 1 :n 1})
+  (let [host (div)]
+    (core/mount! [label] host)
+    (cv/mount! [bars "red" "over-dom"] host)
+    (is (= "CANVAS" (.. host -firstChild -tagName)))
+    (t/reset-renders! label)
+    (events/dispatch [::set :x 2])
+    (t/flush!)
+    (is (zero? (t/renders label)) "the dom root was unmounted: its [:x] subscription is gone")))
+
+(deftest dom-mount-replaces-a-canvas-root-on-the-same-element
+  (reset! state/app-db {:x 1})
+  (reset! spins 0)
+  (let [host (div)
+        asked (atom 0)]
+    (cv/mount! [spin] host)
+    (t/frame! 16)
+    (is (= 1 @spins))
+    (core/mount! [label] host)
+    (is (= "<p>1</p>" (.-innerHTML host)))
+    (is (empty? (draw/states :canvas)) "the canvas root was unmounted")
+    (draw/set-raf! (fn [_] (swap! asked inc)))
+    (t/frame! 32)
+    (is (= 1 @spins) "no loop keeps drawing on the detached canvas")
+    (is (zero? @asked) "and none keeps requesting frames")))

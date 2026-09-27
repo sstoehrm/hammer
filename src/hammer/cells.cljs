@@ -226,6 +226,33 @@
           (remove-watch (aget (.-vals inst) i) cell)
           (unsubscribe! cell))))))
 
+;; ---- roots: one registry shared by every renderer's mount! (hammer.dom,
+;; hammer.draw), so mounting any of them on an element first unmounts what
+;; another mounted there. el → (fn []) that unmounts that root.
+
+(defonce ^:private roots (js/Map.))
+
+(defn unmount-root!
+  "Unmounts the root that any renderer's mount! put on el, if there is one.
+  The entry is removed before its unmount fn runs, so a later failure can't
+  leave el pointing at a destroyed root."
+  [el]
+  (when-let [f (.get roots el)]
+    (.delete roots el)
+    (f)))
+
+(defn set-root!
+  "Registers f, a no-arg fn that unmounts the root just mounted on el."
+  [el f]
+  (.set roots el f))
+
+(defn unmount-roots!
+  "Unmounts every root, whichever renderer mounted it."
+  []
+  (let [fs (js/Array.from (.values roots))]
+    (.clear roots)
+    (.forEach fs (fn [f] (f)))))
+
 (defonce ^:private default-run (volatile! nil))
 
 (defn set-default-runner!

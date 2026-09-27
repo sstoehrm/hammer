@@ -600,20 +600,17 @@
 
 ;; ---- roots
 
-(defonce ^:private roots (atom {}))
-
 (defn mount!
-  "Renders hiccup into container el, replacing what an earlier mount! put there."
+  "Renders hiccup into container el, replacing what an earlier mount! (of any
+  renderer: hammer.canvas/hammer.gpu mount! too) put there."
   [hiccup el]
-  (when-let [old (get @roots el)]
-    (unmount! old)
-    (swap! roots dissoc el))
+  (cells/unmount-root! el)
   (set! (.-textContent ^js el) "")
   (when-not (.-__cuiT ^js el) (set! (.-__cuiT ^js el) (js/Set.)))
   (.clear new-types)
   (let [v (normalize hiccup)]
     (.appendChild ^js el (create! v 0))
-    (swap! roots assoc el v)
+    (cells/set-root! el (fn [] (unmount! v) (set! (.-textContent ^js el) "")))
     (listen-root! el)
     (run-refs!)))
 
@@ -625,12 +622,10 @@
       (if (.-__cuiT n) n (recur (.-parentNode n))))))
 
 (defn unmount-all!
-  "Unmounts every root and empties its container."
+  "Unmounts every root and empties its container. The registry is shared
+  with hammer.draw, so draw roots are unmounted too."
   []
-  (doseq [[el v] @roots]
-    (unmount! v)
-    (set! (.-textContent ^js el) ""))
-  (reset! roots {}))
+  (cells/unmount-roots!))
 
 (cells/set-default-runner!
  (fn [^cells/Instance inst]

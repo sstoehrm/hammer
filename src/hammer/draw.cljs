@@ -339,24 +339,19 @@
 
 ;; ---- standalone mounting
 
-;; el → (fn []) that unmounts the root mounted there
-(defonce ^:private roots (js/Map.))
-
 (defn- destroy-inst! [^cells/Instance inst]
   ((.-destroy ^cells/Host (cells/host (.-comp inst))) inst))
 
 (defn mount!
   "Mounts a draw component vector on el: an existing <canvas> is adopted,
-  anything else gets a canvas inside. With db, replaces app-db first."
+  anything else gets a canvas inside. Whatever an earlier mount! (of any
+  renderer: hammer.core/mount! too) put on el is unmounted first. With db,
+  replaces app-db first."
   ([hiccup ^js el]
    (let [c (nth hiccup 0 nil)
          ^cells/Host h (when (cells/component? c) (cells/host c))]
      (when-not h (throw (js/Error. "hammer: mount! takes a draw component vector, e.g. [chart]")))
-     (when-let [old (.get roots el)]
-       ;; forget it first: if the new create below throws, roots must not
-       ;; still point at this destroyed instance.
-       (.delete roots el)
-       (old))
+     (cells/unmount-root! el)
      (let [canvas? (= "CANVAS" (.-tagName el))
            inst (cells/create c hiccup 1 1)]
        (when-not canvas? (set! (.-textContent el) ""))
@@ -369,20 +364,19 @@
                        (cells/destroy! inst)
                        (throw e)))]
          (when-not canvas? (.appendChild el n))
-         (.set roots el
-               (fn []
-                 (destroy-inst! inst)
-                 ;; a canvas mount! created goes too; an adopted one stays.
-                 (when (and (not canvas?) (identical? el (.-parentNode n)))
-                   (.removeChild el n))))))))
+         (cells/set-root! el
+                          (fn []
+                            (destroy-inst! inst)
+                            ;; a canvas mount! created goes too; an adopted one stays.
+                            (when (and (not canvas?) (identical? el (.-parentNode n)))
+                              (.removeChild el n))))))))
   ([hiccup el db]
    (events/set-db! db)
    (mount! hiccup el)))
 
 (defn unmount-all!
-  "Unmounts every standalone root and removes the canvases mount! created
-  (adopted <canvas> elements stay)."
+  "Unmounts every root (the registry is shared with hammer.dom, so DOM roots
+  too) and removes the canvases mount! created (adopted <canvas> elements
+  stay)."
   []
-  (let [fs (js/Array.from (.values roots))]
-    (.clear roots)
-    (.forEach fs (fn [f] (f)))))
+  (cells/unmount-roots!))
