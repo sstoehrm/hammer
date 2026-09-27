@@ -254,17 +254,22 @@
                     (catch :default e
                       (js/console.error "hammer: render failed in" (cname st) e)
                       nil))]
-    (do (set! (.-broken st) false)
-        (set! (.-opts st) (or (aget out 0) {}))
-        (set! (.-f st) (aget out 1))
+    (let [old (.-opts st)
+          nu (or (aget out 0) {})]
+      (set! (.-broken st) false)
+      (set! (.-opts st) nu)
+      (set! (.-f st) (aget out 1))
+      ;; opts = the last applied ones (nil before the first render): size,
+      ;; attrs and listeners are already in place.
+      (when-not (and (some? old) (= old nu))
         (apply-size! st)
         (apply-attrs! st)
-        (sync-listeners! st)
-        (when (.-loop? st)
-          (let [r (boolean (get (.-opts st) :run? true))]
-            (when-not r (set! (.-last st) nil))
-            (set! (.-running st) r)))
-        (queue! st))
+        (sync-listeners! st))
+      (when (.-loop? st)
+        (let [r (boolean (get nu :run? true))]
+          (when-not r (set! (.-last st) nil))
+          (set! (.-running st) r)))
+      (queue! st))
     (set! (.-broken st) true)))
 
 (defn- run-host!
@@ -307,7 +312,7 @@
     (when-not backend
       (throw (js/Error. (str "hammer: no " (name kind) " backend loaded (require hammer." (name kind) ")"))))
     (let [st (State. inst backend kind loop? (or el (js/document.createElement "canvas")) (vswap! seq-no inc)
-                     {} nil false nil nil false
+                     nil nil false nil nil false
                      0 0 1
                      0 nil 0 false
                      (js/Map.) nil nil true nil)]

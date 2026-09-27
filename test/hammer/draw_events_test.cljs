@@ -47,3 +47,27 @@
     (cv/mount! [clicky] c)
     (click! c 1 1)
     (is (= 1 (count @got)))))
+
+(def steady-draws (atom []))
+
+(defdraw steady [] [n [:n] cls [:cls]]
+  {:size [10 10] :attrs {:class cls} :on-click [::pick]}
+  (fn [_ _] (swap! steady-draws conj n)))
+
+(deftest rerender-with-equal-opts-keeps-listeners-and-attrs
+  (reset! state/app-db {:n 0 :cls "a"})
+  (reset! steady-draws [])
+  (let [c (js/document.createElement "canvas")]
+    (cv/mount! [steady] c)
+    (t/frame! 16)
+    (events/dispatch [::set :n 1]) ; opts = the previous ones
+    (t/frame! 32)
+    (is (= [0 1] @steady-draws))
+    (is (= "a" (.-className c)))
+    (is (= "10px" (.. c -style -width)))
+    (click! c 3 4)
+    (t/flush!)
+    (is (= [3 4] (:picked @state/app-db)) "listener still registered")
+    (events/dispatch [::set :cls "b"]) ; opts changed: applied
+    (t/frame! 48)
+    (is (= "b" (.-className c)))))
