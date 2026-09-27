@@ -401,10 +401,15 @@
     :el (do (.forEach (.-kids v) (fn [k] (unmount! k)))
             (when-let [r (:ref (.-attrs v))] (safe-ref! r nil)))
     :tpl (unmount-tpl! v)
-    :comp (let [inst (.-inst v)]
+    :comp (let [^cells/Instance inst (.-inst v)]
             (if-let [^cells/Host h (cells/host (.-comp v))]
-              ((.-destroy h) inst)
-              (do (unmount! (.-vnode ^cells/Instance inst))
+              (try
+                ((.-destroy h) inst)
+                (catch :default e
+                  (js/console.error "hammer: destroy failed in" (.-cname ^cells/Comp (.-comp v)) e)
+                  ;; whatever the host left undone, its subscriptions go
+                  (when (.-mounted inst) (cells/destroy! inst))))
+              (do (unmount! (.-vnode inst))
                   (cells/destroy! inst))))))
 
 ;; ---- patch
@@ -595,7 +600,13 @@
               (set! (.-el nu) (.-el old))
               (when (cells/set-props! inst (.-args nu) 1)
                 (if-let [^cells/Host h (cells/host (.-comp nu))]
-                  ((.-run h) inst)
+                  ;; isolated like the scheduler's own runs: a throwing host
+                  ;; must not abort the parent's patch
+                  (try
+                    ((.-run h) inst)
+                    (catch :default e
+                      (set! (.-dirty ^cells/Instance inst) false)
+                      (js/console.error "hammer: update failed in" (.-cname ^cells/Comp (.-comp nu)) e)))
                   (update-inst! inst)))))))
 
 ;; ---- roots

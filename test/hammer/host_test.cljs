@@ -26,6 +26,7 @@
 
 (events/reg-event ::set (fn [db k v] {:db (assoc db k v)}))
 (events/reg-event ::set-ids-and-v (fn [db ids v] {:db (assoc db :ids ids :v v)}))
+(events/reg-event ::set-ids-and-label (fn [db ids label] {:db (assoc db :ids ids :label label)}))
 
 (defc holder [] [ids [:ids]]
   [:ul (for [id ids] ^{:key id} [fake id])])
@@ -117,3 +118,64 @@
       (events/dispatch-sync [::set :label "b"])
       (is (= #{[:run [1 "b"]] [:run [2 "b"]]} (set @log2)) "prop change runs the host")
       (is (= before (vec (js/Array.from (.. el -firstChild -children)))) "host node identity kept"))))
+
+;; ---- #16: a throwing Host destroy or run is isolated like other errors
+
+(def log4 (atom []))
+
+(def grumpy
+  "Hosted, one prop (id) and a path binding [:g]; destroy throws before
+  calling cells/destroy!."
+  (cells/component
+   "grumpy" 1 [{:kind :path :deps [] :f (fn [] [:g])}] [0 1] (fn [id g] [id g])
+   (cells/Host.
+    (fn [^cells/Instance inst] (set! (.-dirty inst) false) (cells/refresh! inst)
+      (swap! log4 conj [:run (aget (.-vals inst) 0)]))
+    (fn [^cells/Instance _inst _render _el] (js/document.createElement "i"))
+    (fn [^cells/Instance inst]
+      (swap! log4 conj [:destroy (aget (.-vals inst) 0)])
+      (throw (js/Error. "destroy boom"))))))
+
+(defc holder4 [] [ids [:ids] label [:label]]
+  [:div [:ul (for [id ids] ^{:key id} [grumpy id])] [:b label]])
+
+(def runny
+  "Hosted, props (id, label); run throws."
+  (cells/component
+   "runny" 2 [] [0 1] (fn [id label] [id label])
+   (cells/Host.
+    (fn [^cells/Instance inst] (swap! log4 conj [:run (aget (.-vals inst) 0)]) (throw (js/Error. "run boom")))
+    (fn [^cells/Instance _inst _render _el] (js/document.createElement "i"))
+    (fn [^cells/Instance inst] (cells/destroy! inst)))))
+
+(defc holder5 [] [ids [:ids] label [:label]]
+  [:div [:ul (for [id ids] ^{:key id} [runny id label])] [:b label]])
+
+(defn- capture-errors [f]
+  (let [orig js/console.error errs (atom [])]
+    (set! js/console.error (fn [& args] (swap! errs conj (vec (take 2 args)))))
+    (try (f) (finally (set! js/console.error orig)))
+    @errs))
+
+(deftest throwing-host-destroy-is-isolated
+  (reset! state/app-db {:ids [1 2 3] :label "a" :g 0})
+  (reset! log4 [])
+  (let [el (js/document.createElement "div")]
+    (dom/mount! [holder4] el)
+    (let [errs (capture-errors #(events/dispatch-sync [::set-ids-and-label [] "b"]))]
+      (is (= [[:destroy 1] [:destroy 2] [:destroy 3]] (sort @log4)) "every removed instance is destroyed")
+      (is (= "<div><ul></ul><b>b</b></div>" (.-innerHTML el)) "the parent's patch completes")
+      (is (= (repeat 3 ["hammer: destroy failed in" "grumpy"]) errs) "each throw is logged by component name"))
+    (reset! log4 [])
+    (events/dispatch-sync [::set :g 1])
+    (is (= [] @log4) "their [:g] subscriptions are gone")))
+
+(deftest throwing-host-run-from-a-prop-change-is-isolated
+  (reset! state/app-db {:ids [1 2] :label "a"})
+  (reset! log4 [])
+  (let [el (js/document.createElement "div")]
+    (dom/mount! [holder5] el)
+    (let [errs (capture-errors #(events/dispatch-sync [::set :label "b"]))]
+      (is (= [[:run 1] [:run 2]] @log4) "both hosted instances run")
+      (is (= "<div><ul><i></i><i></i></ul><b>b</b></div>" (.-innerHTML el)) "the parent's patch completes")
+      (is (= (repeat 2 ["hammer: update failed in" "runny"]) errs)))))
