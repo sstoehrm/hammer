@@ -15,14 +15,14 @@
   (cells/component
    "fake" 1 [{:kind :path :deps [] :f (fn [] [:v])}] [0 1] (fn [p v] [p v])
    (cells/Host.
-    (fn [inst] (set! (.-dirty inst) false) (cells/refresh! inst)
+    (fn [^cells/Instance inst] (set! (.-dirty inst) false) (cells/refresh! inst)
       (swap! log conj [:run (vec (.-vals inst))]))
-    (fn [inst _render _el]
+    (fn [^cells/Instance inst _render _el]
       (swap! log conj [:create (vec (.-vals inst))])
       (let [n (js/document.createElement "i")]
         (set! (.-textContent n) (str (aget (.-vals inst) 0)))
         n))
-    (fn [inst] (swap! log conj [:destroy (aget (.-vals inst) 0)]) (cells/destroy! inst)))))
+    (fn [^cells/Instance inst] (swap! log conj [:destroy (aget (.-vals inst) 0)]) (cells/destroy! inst)))))
 
 (events/reg-event ::set (fn [db k v] {:db (assoc db k v)}))
 (events/reg-event ::set-ids-and-v (fn [db ids v] {:db (assoc db :ids ids :v v)}))
@@ -37,12 +37,12 @@
   (cells/component
    "fake2" 2 [] [0 1] (fn [id label] [id label])
    (cells/Host.
-    (fn [inst] (set! (.-dirty inst) false) (cells/refresh! inst)
+    (fn [^cells/Instance inst] (set! (.-dirty inst) false) (cells/refresh! inst)
       (swap! log2 conj [:run (vec (.-vals inst))]))
-    (fn [inst _render _el]
+    (fn [^cells/Instance inst _render _el]
       (swap! log2 conj [:create (vec (.-vals inst))])
       (js/document.createElement "b"))
-    (fn [inst] (swap! log2 conj [:destroy (aget (.-vals inst) 0)]) (cells/destroy! inst)))))
+    (fn [^cells/Instance inst] (swap! log2 conj [:destroy (aget (.-vals inst) 0)]) (cells/destroy! inst)))))
 
 (defc holder2 [] [ids [:ids] label [:label]]
   [:ul (for [id ids] ^{:key id} [fake2 id label])])
@@ -88,10 +88,10 @@
   (cells/component
    "boom-host" 0 [{:kind :path :deps [] :f (fn [] [:boom])}] [0] (fn [v] [v])
    (cells/Host.
-    (fn [inst] (set! (.-dirty inst) false) (cells/refresh! inst)
+    (fn [^cells/Instance inst] (set! (.-dirty inst) false) (cells/refresh! inst)
       (swap! log3 conj [:run (aget (.-vals inst) 0)]))
     (fn [_inst _render _el] (throw (js/Error. "create boom")))
-    (fn [inst] (swap! log3 conj [:destroy]) (cells/destroy! inst)))))
+    (fn [^cells/Instance inst] (swap! log3 conj [:destroy]) (cells/destroy! inst)))))
 
 (defc holder3 [] [] [:div [boom-host]])
 
