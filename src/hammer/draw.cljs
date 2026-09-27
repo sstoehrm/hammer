@@ -244,7 +244,7 @@
       (set! (.-running st) r)))
   (queue! st))
 
-(defn- run!
+(defn- run-host!
   "Host run: recompute bindings; if the draw fn or opts depend on a change,
   re-evaluate them and queue a draw."
   [^cells/Instance inst]
@@ -310,7 +310,7 @@
   "Built by defdraw/defloop: a hammer component drawn by backend kind."
   [cname nprops specs body-deps body kind loop?]
   (cells/component cname nprops specs body-deps body
-                   (cells/Host. run!
+                   (cells/Host. run-host!
                                 (fn [inst render el] (create-host inst kind loop? render el))
                                 destroy!)))
 

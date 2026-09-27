@@ -1,6 +1,7 @@
 {:tasks
  {:requires ([babashka.fs :as fs]
              [babashka.http-client :as http]
+             [clojure.edn :as edn]
              [clojure.java.io :as io]
              [clojure.string :as str])
 
@@ -33,20 +34,24 @@
 
   sizes
   {:doc "Builds the dom/canvas/gpu size apps, prints raw and gzip sizes, and fails if a bundle contains another variant's namespaces"
-   :task (let [forbidden {"size-dom" ["$hammer$draw$" "$hammer$canvas$" "$hammer$gpu$"]
-                          "size-canvas" ["$hammer$dom$" "$hammer$gpu$"]
-                          "size-gpu" ["$hammer$dom$" "$hammer$canvas$"]}
+   :task (let [forbidden {"size-dom" ["hammer/draw.cljs" "hammer/canvas.cljs" "hammer/gpu.cljs"]
+                          "size-canvas" ["hammer/dom.cljs" "hammer/gpu.cljs"]
+                          "size-gpu" ["hammer/dom.cljs" "hammer/canvas.cljs"]}
                out (fn [b] (str "target/size/" b "/main.js"))
+               manifest (fn [b] (str "target/size/" b "/manifest.edn"))
                gz (fn [f] (let [bos (java.io.ByteArrayOutputStream.)]
                             (with-open [z (java.util.zip.GZIPOutputStream. bos)]
                               (io/copy (io/file f) z))
                             (.size bos)))
+               sources (fn [b] (set (mapcat :sources (edn/read-string (slurp (manifest b))))))
                builds (sort (keys forbidden))]
-           (apply shell "npx shadow-cljs release" (concat builds ["--pseudo-names"]))
-           (let [bad (vec (for [b builds, n (forbidden b) :when (str/includes? (slurp (out b)) n)] [b n]))]
-             (apply shell "npx shadow-cljs release" builds)
+           (apply shell "npx shadow-cljs release" builds)
+           (let [bad (vec (for [b builds
+                                :let [srcs (sources b)]
+                                n (forbidden b) :when (contains? srcs n)]
+                            [b n]))]
              (doseq [b builds]
                (println (format "%-12s %8d B  %7d B gzip" b (fs/size (out b)) (gz (out b)))))
              (when (seq bad)
-               (println "FAIL: forbidden namespaces:" (vec bad))
+               (println "FAIL: forbidden namespaces:" bad)
                (System/exit 1))))}}}
