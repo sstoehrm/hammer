@@ -16,7 +16,11 @@
                                (draw/set-raf! (fn [_] (swap! raf-calls inc)))
                                (reset! raf-calls 0)
                                (reset! seen [])
-                               (reset! fake/log []))})
+                               (reset! fake/log []))
+                     ;; unmount first so no live loop can request a real
+                     ;; (setTimeout) frame, then give later namespaces the
+                     ;; default requestAnimationFrame back.
+                     :after (fn [] (t/reset-app!) (draw/set-raf! nil))})
 
 (events/reg-event ::set (fn [db k v] {:db (assoc db k v)}))
 
@@ -64,14 +68,23 @@
   (is (zero? @raf-calls) "no running loop, nothing queued: no rAF"))
 
 (deftest two-loops-share-one-frame-request
+  ;; frames come only from the callbacks handed to the rAF hook (never from a
+  ;; direct frame! call), so this fails if each loop requested its own frame
+  ;; or if one requested frame drew only one loop.
   (reset! state/app-db {:paused? false})
-  (cv/mount! [ticker :a] (div))
-  (cv/mount! [ticker :b] (div))
-  (t/frame! 0)
-  (reset! raf-calls 0)
-  (t/frame! 16)
-  (is (= 1 @raf-calls))
-  (is (= #{[:a 16 16 2] [:b 16 16 2]} (set (take-last 2 @seen)))))
+  (let [cbs (atom [])
+        run-frame! (fn [ts]
+                     (is (= 1 (count @cbs)) "exactly one frame requested for both loops")
+                     (let [f (first @cbs)] (reset! cbs []) (f ts)))]
+    (draw/set-raf! (fn [f] (swap! cbs conj f)))
+    (cv/mount! [ticker :a] (div))
+    (cv/mount! [ticker :b] (div))
+    (t/flush!)
+    (run-frame! 0)
+    (is (= [[:a 0 0 1] [:b 0 0 1]] @seen) "one frame draws both loops, in mount order")
+    (reset! seen [])
+    (run-frame! 16)
+    (is (= [[:a 16 16 2] [:b 16 16 2]] @seen) "same t/dt/n for both in the shared frame")))
 
 (defloop crashy [] [] {:size [10 10]}
   (fn [_ {:keys [n]}] (swap! seen conj [:crashy n]) (throw (js/Error. "x"))))
