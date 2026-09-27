@@ -21,12 +21,15 @@
 (defonce ^:private dev (Dev. :idle nil nil nil (js/Set.) 0))
 
 (defn reset-device!
-  "Test hook: forget the device and any waiting components. A request still
-  pending is ignored when it completes."
+  "Test hook: forget the device (and its format and any unsupported reason)
+  and any waiting components. A request still pending is ignored when it
+  completes."
   []
   (set! (.-gen dev) (inc (.-gen dev)))
   (set! (.-status dev) :idle)
   (set! (.-device dev) nil)
+  (set! (.-format dev) nil)
+  (set! (.-reason dev) nil)
   (.clear (.-waiting dev)))
 
 (defn- configure! [^draw/State st]
@@ -60,10 +63,14 @@
 
 (declare acquire!)
 
-(defn- lost! []
-  (doseq [st (draw/states :gpu)]
+(defn- lost!
+  "Device lost: dispose and unconfigure every gpu component, then wait for a
+  new device."
+  []
+  (doseq [^draw/State st (draw/states :gpu)]
     (draw/dispose! st)
-    (set! (.-ctx ^draw/State st) nil)
+    (some-> ^js (.-ctx st) (.unconfigure))
+    (set! (.-ctx st) nil)
     (.add (.-waiting dev) st))
   (set! (.-status dev) :idle)
   (set! (.-device dev) nil)

@@ -82,8 +82,9 @@
        (fg/settle
         (fn []
           (t/frame! 32)
-          (is (= [[:dispose] [:device] [:configure "bgra8unorm"] [:pass "clear" 1] [:draw 1] [:end] [:submit 1]]
-                 @fg/log))
+          (is (= [[:dispose] [:unconfigure] [:device] [:configure "bgra8unorm"] [:pass "clear" 1] [:draw 1] [:end] [:submit 1]]
+                 @fg/log)
+              "the lost device's context is unconfigured before the new device configures it")
           (is (= 2 @inits))
           (done)))))))
 
