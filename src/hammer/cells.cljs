@@ -235,6 +235,8 @@
 
 (sched/set-runner!
  (fn [^Instance inst]
-   (if-let [^Host h (.-host ^Comp (.-comp inst))]
-     ((.-run h) inst)
-     (when-let [r @default-run] (r inst)))))
+   (if-not (.-mounted inst)
+     (set! (.-dirty inst) false) ; destroyed by an earlier run in this flush
+     (if-let [^Host h (.-host ^Comp (.-comp inst))]
+       ((.-run h) inst)
+       (when-let [r @default-run] (r inst))))))
