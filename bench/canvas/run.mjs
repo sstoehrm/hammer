@@ -399,7 +399,7 @@ async function main() {
     `- Viewport ${VIEWPORT.width}x${VIEWPORT.height}, devicePixelRatio ${opts.dpr}`,
     `- Ops: ${opts.warmups} warm-ups + ${opts.iterations} measured iterations per op, fresh browser context (page) per op and variant, variant order alternating per op; gc() before each iteration`,
     `- CPU throttle (CDP Emulation.setCPUThrottlingRate): ${opts.throttle}x for update/select/swap; 1x (none) for create/clear and all loops`,
-    `- wall = trigger (page.evaluate → bench.run) until rAF → rAF → setTimeout(0), same for both variants. Frame-paced (60 Hz, ~16.7 ms frames): it depends on where in the frame the trigger lands, so ops that fit in one frame read 1-2 frames for both variants; compare script/task for those`,
+    `- wall = trigger (page.evaluate → its own setTimeout(0) task → bench.run) until rAF → rAF → setTimeout(0), same for both variants. Frame-paced (60 Hz, ~16.7 ms frames): it depends on where in the frame the trigger lands, so ops that fit in one frame read 1-2 frames for both variants; compare script/task for those`,
     `- script / task = CDP Performance.getMetrics ScriptDuration / TaskDuration delta around each measured trigger (main-thread time, not quantized)`,
     `- Loops: consecutive rAF timestamp deltas over a ${opts.windowMs} ms window; script/task per frame = metric delta over the window / frames drawn`,
     `- pixel parity: FNV hash of every 2D canvas's backing store after the last iteration, hammer vs vanilla`,

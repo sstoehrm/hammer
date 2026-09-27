@@ -79,7 +79,9 @@ median and p95, delta vs vanilla.
   runs synchronously, which is why the trigger runs in its own task: called
   directly from `page.evaluate`, vanilla's synchronous op work (creating
   canvases, `getContext`, `textContent = ''`) went uncounted while hammer's,
-  deferred to a microtask by `dispatch`, counted.
+  deferred to a microtask by `dispatch`, counted. Promise reaction jobs are
+  not counted either (5 ms of work in a `.then` reads ~0.05 ms), which is why
+  `hammer.events/dispatch` drains via `queueMicrotask`.
 - **CPU throttle**: CDP `Emulation.setCPUThrottlingRate` 4x for update,
   select and swap; none for create, clear and loops. Printed per row.
 - `select` targets a different row every iteration (`k` is passed through),
@@ -128,6 +130,7 @@ number.
 
 | Path | |
 |---|---|
+| `RESULTS.md` | the last full run, with machine and noise notes |
 | `run.mjs` | runner: static server (`/` → `public/`, `/out/` → `target/bench/`), puppeteer-core, stats, markdown |
 | `public/page.html` | one page for all variants: loads `common/data.js`, then `?src=` |
 | `public/common/data.js` | seeded data + layout constants shared by both variants |
