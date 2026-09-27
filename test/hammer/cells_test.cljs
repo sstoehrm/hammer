@@ -4,7 +4,8 @@
             [hammer.state :as state]
             [hammer.trie :as trie]
             [hammer.cells :as cells]
-            [hammer.scheduler :as sched]))
+            [hammer.scheduler :as sched]
+            [hammer.test-util :refer [capture-errors]]))
 
 (defn- set-db! [db]
   (let [old @state/app-db]
@@ -94,16 +95,14 @@
 (deftest unmount-roots-runs-every-root-even-if-one-throws
   (let [el1 (js/document.createElement "div")
         el2 (js/document.createElement "div")
-        unmounted (atom [])
-        orig js/console.error errs (atom 0)]
+        unmounted (atom [])]
     (cells/set-root! el1 (fn [] (throw (js/Error. "boom"))))
     (cells/set-root! el2 (fn [] (swap! unmounted conj el2)))
-    (set! js/console.error (fn [& _] (swap! errs inc)))
-    (try
-      (cells/unmount-roots!)
+    (let [logs (capture-errors (fn [_] (cells/unmount-roots!)))]
       (is (= [el2] @unmounted) "the second root's unmount fn still runs after the first throws")
-      (is (= 1 @errs) "the throwing unmount fn is logged, not left to crash the rest")
-      (finally (set! js/console.error orig)))))
+      (is (= 1 (count logs)) "the throwing unmount fn is logged, not left to crash the rest")
+      (is (= ["hammer: unmount failed for" el1] (vec (take 2 (first logs))))
+          "the log names which element's unmount fn threw"))))
 
 (deftype Fake [depth ^:mutable dirty id])
 

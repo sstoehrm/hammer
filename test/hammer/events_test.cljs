@@ -4,15 +4,9 @@
             [hammer.state :as state]
             [hammer.events :as ev]
             [hammer.testing :as t]
+            [hammer.test-util :refer [capture-errors]]
             [hammer.cells]
             [hammer.dom]))
-
-(defn- capture-errors [f]
-  (let [orig js/console.error
-        logged (atom [])]
-    (set! js/console.error (fn [& args] (swap! logged conj (vec args))))
-    (try (f) (finally (set! js/console.error orig)))
-    @logged))
 
 (deftest handler-gets-db-and-args
   (reset! state/app-db {:n 1})
@@ -47,9 +41,9 @@
   (reset! state/app-db {:n 0})
   (ev/reg-event :boom (fn [_] (throw (js/Error. "boom"))))
   (ev/reg-event :bad-fx (fn [_] {:nope 1}))
-  (let [logs (capture-errors #(do (ev/dispatch-sync [:boom])
-                                  (ev/dispatch-sync [:missing])
-                                  (ev/dispatch-sync [:bad-fx])))]
+  (let [logs (capture-errors (fn [_] (ev/dispatch-sync [:boom])
+                               (ev/dispatch-sync [:missing])
+                               (ev/dispatch-sync [:bad-fx])))]
     (is (= {:n 0} @state/app-db))
     (is (= ["hammer: event handler failed"
             "hammer: no event handler for"
@@ -60,15 +54,15 @@
   (ev/reg-event :inner (fn [db] {:db db}))
   (ev/reg-event :outer (fn [_] (ev/dispatch-sync [:inner]) {:db {:ran true}}))
   (reset! state/app-db {})
-  (let [logs (capture-errors #(ev/dispatch-sync [:outer]))]
+  (let [logs (capture-errors (fn [_] (ev/dispatch-sync [:outer])))]
     (is (= {} @state/app-db))
     (is (re-find #"dispatch-sync called inside" (.-message (last (first logs)))))))
 
 (deftest bad-event-shapes-are-reported
   (reset! state/app-db {:n 0})
   (ev/reg-event :db-only (fn [db] db))
-  (let [logs (capture-errors #(do (ev/dispatch-sync :oops)
-                                  (ev/dispatch-sync [:db-only])))]
+  (let [logs (capture-errors (fn [_] (ev/dispatch-sync :oops)
+                               (ev/dispatch-sync [:db-only])))]
     (is (= "hammer: event must be a vector, got" (first (first logs))))
     (is (re-find #"\{:db db\}" (last (second logs))))
     (is (= {:n 0} @state/app-db))))

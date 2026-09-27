@@ -6,6 +6,7 @@
             [hammer.dom :as dom]
             [hammer.events :as events]
             [hammer.state :as state]
+            [hammer.test-util :refer [capture-errors]]
             [hammer.testing :as t]))
 
 (def log (atom []))
@@ -151,18 +152,14 @@
 (defc holder5 [] [ids [:ids] label [:label]]
   [:div [:ul (for [id ids] ^{:key id} [runny id label])] [:b label]])
 
-(defn- capture-errors [f]
-  (let [orig js/console.error errs (atom [])]
-    (set! js/console.error (fn [& args] (swap! errs conj (vec (take 2 args)))))
-    (try (f) (finally (set! js/console.error orig)))
-    @errs))
+(defn- first-two [logs] (mapv #(vec (take 2 %)) logs))
 
 (deftest throwing-host-destroy-is-isolated
   (reset! state/app-db {:ids [1 2 3] :label "a" :g 0})
   (reset! log4 [])
   (let [el (js/document.createElement "div")]
     (dom/mount! [holder4] el)
-    (let [errs (capture-errors #(events/dispatch-sync [::set-ids-and-label [] "b"]))]
+    (let [errs (first-two (capture-errors (fn [_] (events/dispatch-sync [::set-ids-and-label [] "b"]))))]
       (is (= [[:destroy 1] [:destroy 2] [:destroy 3]] (sort @log4)) "every removed instance is destroyed")
       (is (= "<div><ul></ul><b>b</b></div>" (.-innerHTML el)) "the parent's patch completes")
       (is (= (repeat 3 ["hammer: destroy failed in" "grumpy"]) errs) "each throw is logged by component name"))
@@ -175,7 +172,7 @@
   (reset! log4 [])
   (let [el (js/document.createElement "div")]
     (dom/mount! [holder5] el)
-    (let [errs (capture-errors #(events/dispatch-sync [::set :label "b"]))]
+    (let [errs (first-two (capture-errors (fn [_] (events/dispatch-sync [::set :label "b"]))))]
       (is (= [[:run 1] [:run 2]] @log4) "both hosted instances run")
       (is (= "<div><ul><i></i><i></i></ul><b>b</b></div>" (.-innerHTML el)) "the parent's patch completes")
       (is (= (repeat 2 ["hammer: update failed in" "runny"]) errs)))))
@@ -204,3 +201,27 @@
     (is (= "hammer: Host create of hollow returned nil; it must return a DOM node" msg))
     (is (= [:destroy] @log6) "the host's own destroy cleans up the half-created instance")
     (is (= before (.-refs state/paths)) "no leaked subscription")))
+
+;; a Host whose destroy is a no-op (returns without calling cells/destroy!
+;; itself): create! must still run cells/destroy! after calling it, not just
+;; when destroy throws, or the instance's path subscription leaks forever.
+
+(def hollow-noop
+  (cells/component
+   "hollow-noop" 0 [{:kind :path :deps [] :f (fn [] [:h])}] [0] (fn [v] [v])
+   (cells/Host.
+    (fn [^cells/Instance inst] (set! (.-dirty inst) false))
+    (fn [^cells/Instance _inst _render _el] nil)
+    (fn [^cells/Instance _inst] nil))))
+
+(defc holder7 [] [] [:div [hollow-noop]])
+
+(deftest host-create-returning-nil-with-a-no-op-destroy-does-not-leak
+  (reset! state/app-db {:h 1})
+  (let [el (js/document.createElement "div")
+        before (.-refs state/paths)
+        msg (try (dom/mount! [holder7] el) nil
+                 (catch :default e (.-message e)))]
+    (is (= "hammer: Host create of hollow-noop returned nil; it must return a DOM node" msg))
+    (is (= before (.-refs state/paths))
+        "no leaked subscription even though the host's own destroy never called cells/destroy!")))

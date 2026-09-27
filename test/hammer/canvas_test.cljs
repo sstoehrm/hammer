@@ -11,6 +11,7 @@
             [hammer.draw :as draw]
             [hammer.events :as events]
             [hammer.state :as state]
+            [hammer.test-util :refer [capture-errors]]
             [hammer.testing :as t])
   (:require-macros [hammer.macro-probe :refer [expand-error]]))
 
@@ -91,16 +92,14 @@
 (deftest a-throwing-draw-is-logged-and-retried
   (reset! state/app-db {:n 1})
   (reset! calls [])
-  (let [orig js/console.error errs (atom 0)]
-    (set! js/console.error (fn [& _] (swap! errs inc)))
-    (try
-      (cv/mount! [boom] (div))
-      (t/frame! 16)
-      (events/dispatch [::set :n 2]) (t/frame! 32)
-      (events/dispatch [::set :n 3]) (t/frame! 48)
-      (is (= [1 2 3] @calls))
-      (is (= 1 @errs))
-      (finally (set! js/console.error orig)))))
+  (let [logs (capture-errors
+              (fn [_]
+                (cv/mount! [boom] (div))
+                (t/frame! 16)
+                (events/dispatch [::set :n 2]) (t/frame! 32)
+                (events/dispatch [::set :n 3]) (t/frame! 48)))]
+    (is (= [1 2 3] @calls))
+    (is (= 1 (count logs)))))
 
 (def res-log (atom []))
 
@@ -158,12 +157,8 @@
   (reset! state/app-db {:ghost 1})
   (is (thrown? js/Error (cv/mount! [ghost] (div)))
       "no backend registered for :no-such-backend")
-  (let [orig js/console.error errs (atom 0)]
-    (set! js/console.error (fn [& _] (swap! errs inc)))
-    (try
-      (events/dispatch-sync [::set :ghost 2])
-      (is (zero? @errs) "the failed instance's path subscription must not have leaked")
-      (finally (set! js/console.error orig)))))
+  (let [logs (capture-errors (fn [_] (events/dispatch-sync [::set :ghost 2])))]
+    (is (zero? (count logs)) "the failed instance's path subscription must not have leaked")))
 
 (draw/register-backend!
  :boom-backend
@@ -283,14 +278,12 @@
   (reset! state/app-db {})
   (let [c (js/document.createElement "canvas")]
     (set! (.-getContext c) (fn [_] nil)) ; simulates a canvas already used for WebGPU
-    (let [orig js/console.error errs (atom 0)]
-      (set! js/console.error (fn [& _] (swap! errs inc)))
-      (try
-        (cv/mount! [bars "red" "null2d"] c)
-        (is (= 1 @errs) "a null 2d context is logged once at setup")
-        (t/frame! 16)
-        (is (= 1 @errs) "no ctx: draw-arg returns nil, so the frame draws nothing and logs nothing more")
-        (finally (set! js/console.error orig))))))
+    (let [logs (capture-errors
+                (fn [logs-atom]
+                  (cv/mount! [bars "red" "null2d"] c)
+                  (is (= 1 (count @logs-atom)) "a null 2d context is logged once at setup")
+                  (t/frame! 16)))]
+      (is (= 1 (count logs)) "no ctx: draw-arg returns nil, so the frame draws nothing and logs nothing more"))))
 
 (defc show-wrap [] [show? [:show?]]
   [:div (when show? [with-res])])
@@ -327,29 +320,27 @@
 (deftest throwing-opts-keep-last-content-until-a-good-render
   (reset! state/app-db {:x 1})
   (reset! opt-draws [])
-  (let [host (div)
-        orig js/console.error errs (atom 0)]
-    (set! js/console.error (fn [& _] (swap! errs inc)))
+  (let [host (div)]
     (try
-      (cv/mount! [opt-throws] host)
-      (t/frame! 16)
-      (let [c (.-firstChild host)]
-        (events/dispatch [::set :x :bad])
-        (t/frame! 32)
-        (is (= [1] @opt-draws) "no redraw with the previous draw fn after a failed render")
-        (is (= 1 @errs) "the failed render is logged")
-        (set! (.-devicePixelRatio js/globalThis) 2)
-        (.dispatchEvent js/window (new (.-Event js/window) "resize"))
-        (t/frame! 48)
-        (is (= [10 10] [(.-width c) (.-height c)]) "backing store untouched (not cleared) while the render is failed")
-        (is (= [1] @opt-draws))
-        (events/dispatch [::set :x 3])
-        (t/frame! 64)
-        (is (= [1 3] @opt-draws) "the next good render draws again")
-        (is (= [20 20] [(.-width c) (.-height c)])))
-      (finally
-        (js-delete js/globalThis "devicePixelRatio")
-        (set! js/console.error orig)))))
+      (capture-errors
+       (fn [errs]
+         (cv/mount! [opt-throws] host)
+         (t/frame! 16)
+         (let [c (.-firstChild host)]
+           (events/dispatch [::set :x :bad])
+           (t/frame! 32)
+           (is (= [1] @opt-draws) "no redraw with the previous draw fn after a failed render")
+           (is (= 1 (count @errs)) "the failed render is logged")
+           (set! (.-devicePixelRatio js/globalThis) 2)
+           (.dispatchEvent js/window (new (.-Event js/window) "resize"))
+           (t/frame! 48)
+           (is (= [10 10] [(.-width c) (.-height c)]) "backing store untouched (not cleared) while the render is failed")
+           (is (= [1] @opt-draws))
+           (events/dispatch [::set :x 3])
+           (t/frame! 64)
+           (is (= [1 3] @opt-draws) "the next good render draws again")
+           (is (= [20 20] [(.-width c) (.-height c)])))))
+      (finally (js-delete js/globalThis "devicePixelRatio")))))
 
 (def failed-init-draws (atom 0))
 
@@ -360,18 +351,16 @@
 (deftest failed-init-leaves-the-backing-store-alone-on-resize
   (reset! state/app-db {:w 10})
   (reset! failed-init-draws 0)
-  (let [c (js/document.createElement "canvas")
-        orig js/console.error]
-    (set! js/console.error (fn [& _]))
-    (try
-      (cv/mount! [init-fails] c)
-      (t/frame! 16)
-      (is (= [10 10] [(.-width c) (.-height c)]))
-      (events/dispatch [::set :w 30])
-      (t/frame! 32)
-      (is (= [10 10] [(.-width c) (.-height c)]) "nothing will draw, so the canvas is not resized (cleared)")
-      (is (zero? @failed-init-draws))
-      (finally (set! js/console.error orig)))))
+  (let [c (js/document.createElement "canvas")]
+    (capture-errors
+     (fn [_]
+       (cv/mount! [init-fails] c)
+       (t/frame! 16)
+       (is (= [10 10] [(.-width c) (.-height c)]))
+       (events/dispatch [::set :w 30])
+       (t/frame! 32)
+       (is (= [10 10] [(.-width c) (.-height c)]) "nothing will draw, so the canvas is not resized (cleared)")
+       (is (zero? @failed-init-draws))))))
 
 ;; ---- #11 ruling: a defdraw doesn't redraw after a failed render (see
 ;; throwing-opts-keep-last-content-until-a-good-render above), but a running
@@ -387,27 +376,25 @@
 (deftest running-defloop-keeps-drawing-and-advances-its-clock-through-a-failed-render
   (reset! state/app-db {:x 1})
   (reset! loop-draws [])
-  (let [host (div)
-        orig js/console.error errs (atom 0)]
-    (set! js/console.error (fn [& _] (swap! errs inc)))
-    (try
-      (cv/mount! [loop-opt-throws] host)
-      (t/frame! 16)
-      (is (= [[1 1]] @loop-draws) "first frame draws with x=1, n=1")
-      (events/dispatch [::set :x :bad])
-      (t/frame! 32)
-      (is (= 1 @errs) "the failed render is logged once")
-      (is (= [[1 1] [1 2]] @loop-draws)
-          "still running: drew again with the previous f (x=1 captured), n advanced to 2")
-      (t/frame! 48)
-      (is (= [[1 1] [1 2] [1 3]] @loop-draws)
-          "keeps animating every frame while broken, n keeps advancing")
-      (events/dispatch [::set :x 5])
-      (t/frame! 64)
-      (is (= 1 @errs) "no new failure logged for the good render")
-      (is (= [[1 1] [1 2] [1 3] [5 4]] @loop-draws)
-          "the next good render replaces f, and the clock kept advancing throughout")
-      (finally (set! js/console.error orig)))))
+  (let [host (div)]
+    (capture-errors
+     (fn [errs]
+       (cv/mount! [loop-opt-throws] host)
+       (t/frame! 16)
+       (is (= [[1 1]] @loop-draws) "first frame draws with x=1, n=1")
+       (events/dispatch [::set :x :bad])
+       (t/frame! 32)
+       (is (= 1 (count @errs)) "the failed render is logged once")
+       (is (= [[1 1] [1 2]] @loop-draws)
+           "still running: drew again with the previous f (x=1 captured), n advanced to 2")
+       (t/frame! 48)
+       (is (= [[1 1] [1 2] [1 3]] @loop-draws)
+           "keeps animating every frame while broken, n keeps advancing")
+       (events/dispatch [::set :x 5])
+       (t/frame! 64)
+       (is (= 1 (count @errs)) "no new failure logged for the good render")
+       (is (= [[1 1] [1 2] [1 3] [5 4]] @loop-draws)
+           "the next good render replaces f, and the clock kept advancing throughout")))))
 
 ;; ---- #13 / #14 / #15: standalone roots
 
@@ -480,3 +467,41 @@
     (t/frame! 32)
     (is (= 1 @spins) "no loop keeps drawing on the detached canvas")
     (is (zero? @asked) "and none keeps requesting frames")))
+
+;; ---- destroy!: a throwing backend teardown! must not skip cells/destroy!
+;; or leave the standalone root's canvas mounted, or escape the next mount!
+
+(draw/register-backend!
+ :boom-teardown
+ (draw/Backend. (fn [st _render] (.-canvas ^draw/State st))
+                (fn [_st] nil)
+                (fn [_st] nil)
+                (fn [_st] (throw (js/Error. "teardown boom")))))
+
+(def teardown-boom
+  "A draw component with a path binding on a backend whose teardown! always
+  throws."
+  (draw/component "teardown-boom" 0
+                   [{:kind :path :deps [] :f (fn [] [:tb])}]
+                   [0]
+                   (fn [_tb] (cljs.core/array {:size [10 10]} (fn [_ _] nil)))
+                   :boom-teardown false))
+
+(deftest throwing-teardown-does-not-block-cleanup-or-the-next-mount
+  (reset! state/app-db {:tb 1})
+  (let [el (div)
+        before (.-refs state/paths)]
+    (cv/mount! [teardown-boom] el)
+    (is (= (inc before) (.-refs state/paths)) "the [:tb] path subscription is registered")
+    (let [logs (capture-errors (fn [_] (cv/mount! [teardown-boom] el)))]
+      (is (= ["hammer: teardown failed in" "teardown-boom"] (vec (take 2 (first logs))))
+          "logged with the component name, not left to crash the unmount")
+      (is (= 1 (count logs)))
+      (is (= (inc before) (.-refs state/paths))
+          "the old instance's subscription is gone; the new one's replaces it 1:1")
+      (is (= 1 (.. el -childNodes -length)) "the throwing unmount still removed the old canvas before the new mount! added its own")
+      ;; clean up: this root's teardown! always throws, so its own unmount
+      ;; must be captured too, and done explicitly (this test's assertions
+      ;; already ran) so it doesn't linger into another namespace's test of
+      ;; hammer.cells/unmount-roots! sharing the same global registry.
+      (capture-errors (fn [_] (t/reset-app!))))))
