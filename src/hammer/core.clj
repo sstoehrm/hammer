@@ -1,48 +1,7 @@
 (ns hammer.core
   (:require [clojure.string :as str]
-            [clojure.walk :as walk]))
-
-(defn- deps-of
-  "Indices of the slots named anywhere in form (metadata included)."
-  [slots form]
-  (let [used (set (filter symbol? (tree-seq coll? #(concat (seq %) (meta %)) form)))]
-    (vec (keep-indexed (fn [i s] (when (used s) i)) slots))))
-
-(defn- is?-form?
-  "True for (is? ...), (hammer.core/is? ...) or (alias/is? ...) where alias
-  names hammer.core in the ns requires. Decided by symbol, not by resolution."
-  [env init]
-  (and (seq? init)
-       (symbol? (first init))
-       (= "is?" (name (first init)))
-       (let [q (namespace (first init))]
-         (or (nil? q)
-             (= 'hammer.core (symbol q))
-             (= 'hammer.core (get-in env [:ns :requires (symbol q)]))))))
-
-(defn- lit? [x] (or (string? x) (number? x) (keyword? x) (boolean? x) (nil? x)))
-
-(defn- slot-fn
-  "fn of the dep slots returning form; a vector of literals (a constant path)
-  is built once and shared by every call."
-  [args form]
-  (if (and (vector? form) (every? lit? form))
-    `(let [p# ~form] (fn ~args p#))
-    `(fn ~args ~form)))
-
-(defn- binding-spec
-  "slots: props and earlier binding names visible to this init. An :eq spec
-  has :f for the path and :g for the compared value."
-  [env slots [_ init]]
-  (let [deps (deps-of slots init)
-        args (mapv slots deps)
-        eq? (is?-form? env init)]
-    (when (and eq? (not= 3 (count init)))
-      (throw (ex-info "defc: is? takes a path and a value" {:form init})))
-    (cond
-      eq? `{:kind :eq :deps ~deps :f ~(slot-fn args (nth init 1)) :g (fn ~args ~(nth init 2))}
-      (vector? init) `{:kind :path :deps ~deps :f ~(slot-fn args init)}
-      :else `{:kind :expr :deps ~deps :f (fn ~args ~init)})))
+            [clojure.walk :as walk]
+            [hammer.macros :as m]))
 
 ;; ---- template compiler
 ;;
@@ -109,7 +68,7 @@
   (let [a (nth v 1 nil)]
     (cond
       (map? a) (when (every? keyword? (keys a)) [a 2 false])
-      (or (lit? a) (vector? a)) [nil 1 false]
+      (or (m/lit? a) (vector? a)) [nil 1 false]
       :else [nil 1 true])))
 
 (defn- tag-classes
@@ -119,10 +78,10 @@
         cls (seq (map second (re-seq #"\.([^.#]+)" (or more ""))))]
     (when cls (str/join " " cls))))
 
-(defn- static-class? [x] (or (lit? x) (and (vector? x) (every? lit? x))))
+(defn- static-class? [x] (or (m/lit? x) (and (vector? x) (every? m/lit? x))))
 
 (defn- static-style? [x]
-  (or (nil? x) (and (map? x) (every? keyword? (keys x)) (every? lit? (vals x)))))
+  (or (nil? x) (and (map? x) (every? keyword? (keys x)) (every? m/lit? (vals x)))))
 
 (defn- hole!
   "Binds expr to a fresh local, in source order; returns the local."
@@ -156,7 +115,7 @@
                  (#{:value :checked :selected} k) (hole 5 n)
                  (= k :class) (if (static-class? x) [(assoc st k x) hs] (hole 3 (tag-classes tag)))
                  (= k :style) (if (static-style? x) [(assoc st k x) hs] (hole 4 nil))
-                 (lit? x) [(assoc st k x) hs]
+                 (m/lit? x) [(assoc st k x) hs]
                  :else (hole 2 n))))
            [{} []]
            (or attrs {}))
@@ -166,7 +125,7 @@
                     (let [p (conj path (count sk))
                           sub (when (el? c) (analyze ctx c p))]
                       (cond
-                        (lit? c) [(conj sk c) (conj pk c) hs]
+                        (m/lit? c) [(conj sk c) (conj pk c) hs]
                         sub [(conj sk (:skel sub)) (conj pk (:plain sub)) (into hs (:holes sub))]
                         :else (let [h (hole! ctx (compile-pos ctx c))]
                                 (when (and maybe? (empty? sk)) (vswap! (:checks ctx) conj h))
@@ -251,12 +210,7 @@
   [cname props bindings & body]
   (let [pairs (partition 2 bindings)
         slots (into (vec props) (map first pairs))]
-    (when (odd? (count bindings))
-      (throw (ex-info "defc: bindings need an even number of forms" {:name cname})))
-    (when-not (every? simple-symbol? slots)
-      (throw (ex-info "defc: props and binding names must be plain symbols" {:name cname})))
-    (when-not (= (count slots) (count (set slots)))
-      (throw (ex-info "defc: duplicate prop or binding name" {:name cname :slots slots})))
+    (m/check-slots! "defc" cname props bindings)
     (let [defs (atom [])
           out (if (seq body)
                 (conj (vec (butlast body)) (compile-pos {:cname cname :defs defs} (last body)))
@@ -270,7 +224,7 @@
             ~(str cname)
             ~(count props)
             ~(vec (map-indexed (fn [j pair]
-                                 (binding-spec &env (subvec slots 0 (+ (count props) j)) pair))
+                                 (m/binding-spec &env (subvec slots 0 (+ (count props) j)) pair))
                                pairs))
-            ~(deps-of slots (vec body))
+            ~(m/deps-of slots (vec body))
             (fn ~slots ~@out)))))))
