@@ -4,6 +4,10 @@
             [hammer.fake-canvas :as fake]
             [hammer.core :as core :refer [defc]]
             [hammer.canvas :as cv :refer [defdraw]]
+            ;; #19's macro-expansion probe below calls hammer.gpu/defloop
+            ;; fully-qualified; without this require, whether it's already
+            ;; compiled depends on load order across test namespaces.
+            [hammer.gpu]
             [hammer.draw :as draw]
             [hammer.events :as events]
             [hammer.state :as state]
