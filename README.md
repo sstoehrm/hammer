@@ -176,6 +176,13 @@ See `examples/canvas` (a scatter chart with click-to-select, plus bouncing
 balls with a pause button) and `examples/gpu` (a WebGPU colour swatch and a
 pulsing loop, with a fallback message when WebGPU is unavailable).
 
+On Linux, Chromium may expose `navigator.gpu` but return no adapter while
+Vulkan is disabled (`chrome://gpu` shows "Vulkan: Disabled"); hammer then logs
+`hammer: WebGPU unavailable: no WebGPU adapter` and renders `:fallback`. Start
+Chromium with `--enable-unsafe-webgpu --enable-features=Vulkan` (or enable
+`chrome://flags/#enable-vulkan`) to get a hardware adapter. Firefox has WebGPU
+off by default (`navigator.gpu is missing`).
+
 ## Measured
 
 - Core size (`bb loc`): 1078 lines
