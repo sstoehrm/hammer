@@ -56,3 +56,28 @@
       (throw (ex-info (str macro ": props and binding names must be plain symbols") {:name cname})))
     (when-not (= (count slots) (count (set slots)))
       (throw (ex-info (str macro ": duplicate prop or binding name") {:name cname :slots slots})))))
+
+(defn draw-def
+  "Expansion of defdraw/defloop for backend kind (:canvas or :gpu).
+  more is [opts? draw-fn]; opts, when present, is a literal map."
+  [env macro kind loop? cname props bindings more]
+  (check-slots! macro cname props bindings)
+  (let [[opts draw] (case (count more)
+                      1 [nil (first more)]
+                      2 (if (map? (first more))
+                          more
+                          (throw (ex-info (str macro ": opts must be a literal map") {:name cname})))
+                      (throw (ex-info (str macro ": expected [props] [bindings] opts? draw-fn") {:name cname})))
+        pairs (partition 2 bindings)
+        slots (into (vec props) (map first pairs))]
+    `(def ~cname
+       (hammer.draw/component
+        ~(str cname)
+        ~(count props)
+        ~(vec (map-indexed (fn [j pair]
+                             (binding-spec env (subvec slots 0 (+ (count props) j)) pair))
+                           pairs))
+        ~(deps-of slots [opts draw])
+        (fn ~slots (cljs.core/array ~opts ~draw))
+        ~kind
+        ~loop?))))

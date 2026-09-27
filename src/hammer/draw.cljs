@@ -1,0 +1,321 @@
+(ns hammer.draw
+  "Runtime shared by draw components (hammer.canvas, hammer.gpu): the draw
+  runner, the frame queue and loop, and the canvas host (size, DPR, attrs,
+  events). A Backend supplies the drawing context. A draw instance keeps its
+  State in the instance's vnode field."
+  (:require [clojure.string :as str]
+            [hammer.cells :as cells]
+            [hammer.events :as events]))
+
+;; setup!: (fn [st render] → node) once the canvas exists; draw-arg: (fn [st])
+;; → first draw-fn arg, nil to skip this draw; resized!: (fn [st]) after the
+;; backing store changed; teardown!: (fn [st]) on unmount.
+(deftype Backend [setup! draw-arg resized! teardown!])
+
+(defonce ^:private backends #js {})
+
+(defn register-backend! [kind ^Backend b] (aset backends (name kind) b))
+
+(deftype State [inst backend kind loop? canvas order
+                ^:mutable opts ^:mutable f ^:mutable ctx ^:mutable res ^:mutable inited
+                ^:mutable w ^:mutable h ^:mutable dpr
+                ^:mutable t ^:mutable last ^:mutable n ^:mutable running
+                listeners ^:mutable observer ^:mutable attrs ^:mutable alive ^:mutable ext])
+
+(defonce ^:private seq-no (volatile! 0))
+(defonce ^:private all (js/Set.))      ; alive states
+(defonce ^:private queued (js/Set.))   ; states to draw at the next frame
+(defonce ^:private loops (js/Set.))    ; mounted defloop states
+
+(deftype Clock [^:mutable pending ^:mutable raf])
+(defonce ^:private clock (Clock. false nil))
+
+(declare frame!)
+
+(defn- cname [^State st] (.-cname ^cells/Comp (.-comp ^cells/Instance (.-inst st))))
+
+(defn- request! []
+  (when-not (.-pending clock)
+    (set! (.-pending clock) true)
+    (if-let [r (.-raf clock)] (r frame!) (js/requestAnimationFrame frame!))))
+
+(defn set-raf!
+  "Test hook: f replaces requestAnimationFrame (called with the frame fn); nil restores it."
+  [f]
+  (set! (.-raf clock) f)
+  (set! (.-pending clock) false))
+
+(defn queue! "Draws st at the next frame." [^State st] (.add queued st) (request!))
+
+(defn states "Alive states of backend kind." [kind]
+  (.filter (js/Array.from all) (fn [^State st] (keyword-identical? kind (.-kind st)))))
+
+;; ---- canvas host: size, attrs, events
+
+(defn- set-css! [^js el k v] (.setProperty (.-style el) k v))
+
+(defn- observe!
+  "Auto size: the canvas fills its CSS box and follows it."
+  [^State st]
+  (let [^js c (.-canvas st)]
+    (set-css! c "display" "block")
+    (set-css! c "width" "100%")
+    (set-css! c "height" "100%")
+    (set! (.-w st) (.-clientWidth c))
+    (set! (.-h st) (.-clientHeight c))
+    (set! (.-observer st)
+          (if (exists? js/ResizeObserver)
+            (doto (js/ResizeObserver.
+                   (fn [^js entries]
+                     (when-not (:size (.-opts st))
+                       (let [r (.-contentRect (aget entries 0))]
+                         (set! (.-w st) (.-width r))
+                         (set! (.-h st) (.-height r))
+                         (queue! st)))))
+              (.observe c))
+            #js {:disconnect (fn [])}))))
+
+(defn- apply-size! [^State st]
+  (if-let [[w h] (:size (.-opts st))]
+    (do (set! (.-w st) w)
+        (set! (.-h st) h)
+        (set-css! (.-canvas st) "width" (str w "px"))
+        (set-css! (.-canvas st) "height" (str h "px")))
+    (when-not (.-observer st) (observe! st))))
+
+(defn- apply-attrs! [^State st]
+  (let [^js c (.-canvas st)
+        old (.-attrs st)
+        nu (:attrs (.-opts st))]
+    (when-not (identical? old nu)
+      (doseq [[k v] nu :when (not= v (get old k))]
+        (case k
+          :class (set! (.-className c) (if (coll? v) (str/join " " (remove nil? v)) (str v)))
+          :style (doseq [[sk sv] v] (set-css! c (name sk) (str sv)))
+          (if (nil? v) (.removeAttribute c (name k)) (.setAttribute c (name k) (str v)))))
+      (doseq [[k _] old :when (not (contains? nu k))]
+        (case k
+          :class (set! (.-className c) "")
+          :style nil
+          (.removeAttribute c (name k))))
+      (set! (.-attrs st) nu))))
+
+(defn- local-xy [^js c ^js e]
+  (when (number? (.-clientX e))
+    (let [r (.getBoundingClientRect c)]
+      [(- (.-clientX e) (.-left r)) (- (.-clientY e) (.-top r))])))
+
+(defn- handle! [^State st k ^js e]
+  (when-let [h (get (.-opts st) k)]
+    (let [xy (local-xy (.-canvas st) e)]
+      (cond
+        (vector? h) (events/dispatch (if xy (into h xy) h))
+        (fn? h) (h e (when xy {:x (nth xy 0) :y (nth xy 1)}))))))
+
+(defn- sync-listeners!
+  "One listener per :on-<type> key of opts; listeners map keyed by type string."
+  [^State st]
+  (let [^js ls (.-listeners st)
+        ^js c (.-canvas st)
+        want (into #{} (filter #(str/starts-with? (name %) "on-")) (keys (.-opts st)))]
+    (doseq [k want
+            :let [t (subs (name k) 3)]
+            :when (not (.has ls t))]
+      (let [f (fn [e] (handle! st k e))]
+        (.set ls t f)
+        (.addEventListener c t f)))
+    (.forEach ls (fn [f t]
+                   (when-not (contains? want (keyword (str "on-" t)))
+                     (.removeEventListener c t f)
+                     (.delete ls t))))))
+
+;; ---- drawing
+
+(defn- sync-size! [^State st]
+  (let [dpr (or (.-devicePixelRatio js/globalThis) 1)
+        ^js c (.-canvas st)
+        bw (js/Math.ceil (* (.-w st) dpr))
+        bh (js/Math.ceil (* (.-h st) dpr))]
+    (set! (.-dpr st) dpr)
+    (when (or (not= bw (.-width c)) (not= bh (.-height c)))
+      (set! (.-width c) bw)
+      (set! (.-height c) bh)
+      ((.-resized! ^Backend (.-backend st)) st))))
+
+(defn- advance!
+  "Loop timing for a running loop at frame time ts; returns dt (0 otherwise)."
+  [^State st ts]
+  (if (and (.-loop? st) (.-running st))
+    (let [dt (if (nil? (.-last st)) 0 (min (get (.-opts st) :max-dt 100) (- ts (.-last st))))]
+      (set! (.-last st) ts)
+      (set! (.-t st) (+ (.-t st) dt))
+      (set! (.-n st) (inc (.-n st)))
+      dt)
+    0))
+
+(defn- info [^State st dt]
+  (let [m {:w (.-w st) :h (.-h st) :dpr (.-dpr st)}]
+    (if (.-loop? st) (assoc m :t (.-t st) :dt dt :n (.-n st)) m)))
+
+(defn- init! [^State st arg i]
+  (if-let [init (:init (.-opts st))]
+    (try
+      (set! (.-res st) (init arg i))
+      (set! (.-inited st) true)
+      (catch :default e
+        (js/console.error "hammer: init failed in" (cname st) e)
+        (set! (.-inited st) :failed)))
+    (set! (.-inited st) true)))
+
+(defn dispose!
+  "Runs :dispose for an initialized state and marks it for a new :init."
+  [^State st]
+  (when (true? (.-inited st))
+    (when-let [d (:dispose (.-opts st))]
+      (try (d (.-res st))
+           (catch :default e (js/console.error "hammer: dispose failed in" (cname st) e)))))
+  (set! (.-res st) nil)
+  (set! (.-inited st) false))
+
+(defn- draw! [^State st ts]
+  (when (.-alive st)
+    (let [dt (advance! st ts)]
+      (sync-size! st)
+      (let [f (.-f st)
+            arg (when (and f (pos? (.-w st)) (pos? (.-h st)))
+                  ((.-draw-arg ^Backend (.-backend st)) st))]
+        (when arg
+          (let [i (info st dt)]
+            (when (false? (.-inited st)) (init! st arg i))
+            (when (true? (.-inited st))
+              (try
+                (if (contains? (.-opts st) :init) (f arg i (.-res st)) (f arg i))
+                (catch :default e
+                  (js/console.error "hammer: draw failed in" (cname st) e))))))))))
+
+(defn- some-running? []
+  (let [r (volatile! false)]
+    (.forEach loops (fn [^State st] (when (.-running st) (vreset! r true))))
+    @r))
+
+(defn frame!
+  "One animation frame at time ts (ms): draws every queued state and every
+  running loop once, in mount order, then requests another frame while a loop
+  runs."
+  [ts]
+  (set! (.-pending clock) false)
+  (let [s (js/Set. queued)]
+    (.clear queued)
+    (.forEach loops (fn [^State st] (when (.-running st) (.add s st))))
+    (.forEach (.sort (js/Array.from s) (fn [^State a ^State b] (- (.-order a) (.-order b))))
+              (fn [st] (draw! st ts))))
+  (when (or (pos? (.-size queued)) (some-running?)) (request!)))
+
+;; ---- instances
+
+(defn- rerender!
+  "Re-evaluates opts and the draw fn from the instance's current bindings."
+  [^State st]
+  (try
+    (let [out (cells/render (.-inst st))]
+      (set! (.-opts st) (or (aget out 0) {}))
+      (set! (.-f st) (aget out 1)))
+    (catch :default e (js/console.error "hammer: render failed in" (cname st) e)))
+  (apply-size! st)
+  (apply-attrs! st)
+  (sync-listeners! st)
+  (when (.-loop? st)
+    (let [r (boolean (get (.-opts st) :run? true))]
+      (when-not r (set! (.-last st) nil))
+      (set! (.-running st) r)))
+  (queue! st))
+
+(defn- run!
+  "Host run: recompute bindings; if the draw fn or opts depend on a change,
+  re-evaluate them and queue a draw."
+  [^cells/Instance inst]
+  (set! (.-dirty inst) false)
+  (when (.-mounted inst)
+    (when (try (cells/refresh! inst)
+               (catch :default e
+                 (js/console.error "hammer: render failed in" (.-cname ^cells/Comp (.-comp inst)) e)
+                 false))
+      (rerender! (.-vnode inst)))))
+
+(defonce ^:private resize-hooked (volatile! false))
+
+(defn- hook-resize!
+  "Window resize (also fired on zoom and DPR changes): redraw everything."
+  []
+  (when-not @resize-hooked
+    (vreset! resize-hooked true)
+    (.addEventListener js/window "resize" (fn [_] (.forEach all (fn [st] (queue! st)))))))
+
+(defn- create-host [^cells/Instance inst kind loop? render el]
+  (let [backend (aget backends (name kind))]
+    (when-not backend
+      (throw (js/Error. (str "hammer: no " (name kind) " backend loaded (require hammer." (name kind) ")"))))
+    (let [st (State. inst backend kind loop? (or el (js/document.createElement "canvas")) (vswap! seq-no inc)
+                     {} nil nil nil false
+                     0 0 1
+                     0 nil 0 false
+                     (js/Map.) nil nil true nil)]
+      (set! (.-vnode inst) st)
+      (.add all st)
+      (when loop? (.add loops st))
+      (hook-resize!)
+      (rerender! st)
+      ((.-setup! ^Backend backend) st render))))
+
+(defn- destroy! [^cells/Instance inst]
+  (let [^State st (.-vnode inst)
+        ^js c (.-canvas st)]
+    (set! (.-alive st) false)
+    (.delete all st)
+    (.delete queued st)
+    (.delete loops st)
+    (.forEach (.-listeners st) (fn [f t] (.removeEventListener c t f)))
+    (.clear (.-listeners st))
+    (some-> ^js (.-observer st) (.disconnect))
+    (dispose! st)
+    ((.-teardown! ^Backend (.-backend st)) st)
+    (cells/destroy! inst)))
+
+(defn component
+  "Built by defdraw/defloop: a hammer component drawn by backend kind."
+  [cname nprops specs body-deps body kind loop?]
+  (cells/component cname nprops specs body-deps body
+                   (cells/Host. run!
+                                (fn [inst render el] (create-host inst kind loop? render el))
+                                destroy!)))
+
+;; ---- standalone mounting
+
+(defonce ^:private roots (js/Map.))
+
+(defn- destroy-inst! [^cells/Instance inst]
+  ((.-destroy ^cells/Host (cells/host (.-comp inst))) inst))
+
+(defn mount!
+  "Mounts a draw component vector on el: an existing <canvas> is adopted,
+  anything else gets a canvas inside. With db, replaces app-db first."
+  ([hiccup ^js el]
+   (let [c (nth hiccup 0 nil)
+         ^cells/Host h (when (cells/component? c) (cells/host c))]
+     (when-not h (throw (js/Error. "hammer: mount! takes a draw component vector, e.g. [chart]")))
+     (when-let [old (.get roots el)] (destroy-inst! old))
+     (let [canvas? (= "CANVAS" (.-tagName el))
+           inst (cells/create c hiccup 1 1)]
+       (when-not canvas? (set! (.-textContent el) ""))
+       (let [n ((.-create h) inst nil (when canvas? el))]
+         (when-not canvas? (.appendChild el n)))
+       (.set roots el inst))))
+  ([hiccup el db]
+   (events/set-db! db)
+   (mount! hiccup el)))
+
+(defn unmount-all!
+  "Unmounts every standalone root."
+  []
+  (.forEach roots (fn [inst _] (destroy-inst! inst)))
+  (.clear roots))

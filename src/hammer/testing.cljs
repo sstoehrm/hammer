@@ -4,6 +4,7 @@
             [hammer.scheduler :as sched]
             [hammer.cells :as cells]
             [hammer.dom :as dom]
+            [hammer.draw :as draw]
             [hammer.state :as state]))
 
 (defn flush!
@@ -29,5 +30,17 @@
 (defn reset-app!
   "Unmounts every root and empties app-db. Use as a :before fixture."
   []
+  (draw/unmount-all!)
   (dom/unmount-all!)
   (reset! state/app-db {}))
+
+(defn use-fake-frames!
+  "Draw components get frames only from frame!, never from requestAnimationFrame."
+  []
+  (draw/set-raf! (fn [_] nil)))
+
+(defn frame!
+  "Flushes pending events and updates, then runs one draw frame at time ms."
+  [ms]
+  (flush!)
+  (draw/frame! ms))
