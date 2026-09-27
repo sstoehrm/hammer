@@ -12,6 +12,11 @@
   (fn [g {:keys [t]}] (let [v (/ (inc (Math/sin (/ t 300))) 2)] (gpu/pass g {:clear [v v 0.2 1]} (fn [_])))))
 
 (defc page [] [n [:n]]
-  [:div [:button {:on-click [:inc]} (str "Colour " n)] [swatch] [pulse]])
+  [:div
+   [:h2 "Swatch (defdraw): redraws on each click"]
+   [:button {:on-click [:inc]} (str "Colour " n)]
+   [:div [swatch]]
+   [:h2 "Pulse (defloop): animates every frame"]
+   [:div [pulse]]])
 
 (defn ^:export main [] (mount! [page] (js/document.getElementById "app") {:n 0}))
