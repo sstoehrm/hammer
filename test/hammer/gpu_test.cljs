@@ -2,6 +2,10 @@
   (:require [cljs.test :refer [deftest is async use-fixtures]]
             [hammer.test-env]
             [hammer.fake-gpu :as fg]
+            ;; side effect only: fake-gpu's poisoned-canvas check relies on
+            ;; fake-canvas's __fake2d flag, and must not depend on some other
+            ;; namespace happening to load it into the bundle first.
+            [hammer.fake-canvas]
             [hammer.core :as core :refer [defc]]
             [hammer.gpu :as gpu :refer [defdraw]]
             [hammer.state :as state]
@@ -81,3 +85,60 @@
                  @fg/log))
           (is (= 2 @inits))
           (done)))))))
+
+;; ---- fix round 1: one component's configure! failure must not break the page
+
+(deftest one-components-configure-failure-does-not-break-others
+  (async done
+    (fg/install! :ok)
+    (reset! state/app-db {:n 5})
+    (reset! inits 0)
+    (reset! unsupported [])
+    (let [bad (js/document.createElement "canvas")
+          good (js/document.createElement "canvas")]
+      ;; a canvas that already has a 2d context can never get a webgpu one:
+      ;; configure! will call .configure on a nil context and throw.
+      (.getContext bad "2d")
+      (let [orig js/console.error errs (atom 0)]
+        (set! js/console.error (fn [& _] (swap! errs inc)))
+        (gpu/mount! [tri] bad)
+        (gpu/mount! [tri] good)
+        (fg/settle
+         (fn []
+           (t/frame! 16)
+           (set! js/console.error orig)
+           (is (= 1 @errs) "the bad canvas's configure! failure is logged once")
+           (is (= [[:device] [:configure "bgra8unorm"] [:pass "clear" 1] [:draw 5] [:end] [:submit 1]] @fg/log)
+               "the good canvas still configures and draws")
+           (is (= 1 @inits) "only the good component initialized")
+           (is (empty? @unsupported) "status stayed :ready -- on-unsupported was not called")
+           (done)))))))
+
+;; ---- fix round 1: a throwing fallback callback must not block other waiters
+
+(def fb-log (atom []))
+
+(defdraw fb-a [] [] {:size [10 10] :on-unsupported (fn [_] (throw (js/Error. "boom")))}
+  (fn [_g _]))
+
+(defdraw fb-b [] [] {:size [10 10] :on-unsupported (fn [r] (swap! fb-log conj r))}
+  (fn [_g _]))
+
+(deftest one-throwing-on-unsupported-does-not-block-others-or-relog
+  (async done
+    (fg/install! :no-adapter)
+    (reset! fb-log [])
+    (let [logs (atom [])
+          orig js/console.error]
+      (set! js/console.error (fn [& args] (swap! logs conj (vec args))))
+      ;; both mount while the device is still :pending, so both land in the
+      ;; same `waiting` set and get fallback! called from the same forEach.
+      (gpu/mount! [fb-a] (js/document.createElement "canvas"))
+      (gpu/mount! [fb-b] (js/document.createElement "canvas"))
+      (fg/settle
+       (fn []
+         (set! js/console.error orig)
+         (is (= 1 (count @fb-log)) "the second component's on-unsupported still ran despite the first throwing")
+         (is (= 1 (count (filter #(= "hammer: WebGPU unavailable:" (first %)) @logs)))
+             "the page-level unavailable message is logged exactly once")
+         (done))))))

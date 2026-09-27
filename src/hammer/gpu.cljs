@@ -32,14 +32,19 @@
     (draw/queue! st)))
 
 (defn- fallback! [^draw/State st]
-  (let [opts (.-opts st)
-        ^js ext (.-ext st)]
-    (when-let [f (:on-unsupported opts)] (f (.-reason dev)))
-    (when-let [h (:fallback opts)]
-      (when-let [render (some-> ext .-render)]
-        (let [^js wrap (.-wrap ext)]
-          (set! (.-textContent wrap) "")
-          (.appendChild wrap (render h)))))))
+  ;; a throwing :on-unsupported or :fallback render is a bug in the caller's
+  ;; component, not ours -- caught and logged so it can't abort a forEach over
+  ;; other waiting states or leave `waiting` uncleared.
+  (try
+    (let [opts (.-opts st)
+          ^js ext (.-ext st)]
+      (when-let [f (:on-unsupported opts)] (f (.-reason dev)))
+      (when-let [h (:fallback opts)]
+        (when-let [render (some-> ext .-render)]
+          (let [^js wrap (.-wrap ext)]
+            (set! (.-textContent wrap) "")
+            (.appendChild wrap (render h))))))
+    (catch :default e (js/console.error "hammer: gpu fallback failed" e))))
 
 (defn- unsupported! [reason]
   (set! (.-status dev) :unsupported)
@@ -66,7 +71,14 @@
   (.then (.-lost device) (fn [^js info]
                            (when (and (identical? device (.-device dev)) (not= "destroyed" (.-reason info)))
                              (lost!))))
-  (.forEach (.-waiting dev) configure!)
+  ;; one state's configure! failing (e.g. an adopted canvas that already has
+  ;; a 2d context, so getContext "webgpu" is nil) must not stop the others
+  ;; from configuring, and must not be mistaken for a page-wide device/adapter
+  ;; failure by whatever called ready!.
+  (.forEach (.-waiting dev)
+            (fn [st]
+              (try (configure! st)
+                   (catch :default e (js/console.error "hammer: gpu configure failed" e)))))
   (.clear (.-waiting dev)))
 
 (defn- acquire! []
@@ -75,13 +87,20 @@
     (let [^js gpu (.-gpu js/navigator)]
       (if-not gpu
         (unsupported! "navigator.gpu is missing")
-        (-> (.requestAdapter gpu)
-            (.then (fn [^js a]
-                     (if-not a
-                       (unsupported! "no WebGPU adapter")
-                       (.then (.requestDevice a)
-                              (fn [d] (ready! d (.getPreferredCanvasFormat gpu)))))))
-            (.catch (fn [e] (unsupported! (str e)))))))))
+        ;; the failure callback of each `.then` is passed as its second arg
+        ;; (not chained on afterwards via `.catch`) so it only fires for an
+        ;; actual requestAdapter/requestDevice rejection -- an exception
+        ;; thrown by ready! itself (already guarded above) or by unsupported!
+        ;; (guarded in fallback!) can never be mistaken for one and re-log or
+        ;; re-run the unsupported path.
+        (.then (.requestAdapter gpu)
+               (fn [^js a]
+                 (if-not a
+                   (unsupported! "no WebGPU adapter")
+                   (.then (.requestDevice a)
+                          (fn [d] (ready! d (.getPreferredCanvasFormat gpu)))
+                          (fn [e] (unsupported! (str e))))))
+               (fn [e] (unsupported! (str e))))))))
 
 (draw/register-backend!
  :gpu

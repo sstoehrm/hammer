@@ -37,11 +37,17 @@
           (fn [kind]
             (this-as ^js c
               (if (= kind "webgpu")
-                (or (.-__fakegpu c)
-                    (let [o #js {:configure (fn [^js d] (swap! log conj [:configure (.-format d)]))
-                                 :unconfigure (fn [] (swap! log conj [:unconfigure]))
-                                 :getCurrentTexture (fn [] #js {:createView (fn [] #js {:view true})})}]
-                      (set! (.-__fakegpu c) o) o))
+                ;; realistic exclusivity: a canvas that already has a 2d
+                ;; context (hammer.fake-canvas's fake sets __fake2d) can't
+                ;; also get a webgpu one -- used to exercise configure!
+                ;; failing for one component without breaking others.
+                (cond
+                  (.-__fake2d c) nil
+                  (.-__fakegpu c) (.-__fakegpu c)
+                  :else (let [o #js {:configure (fn [^js d] (swap! log conj [:configure (.-format d)]))
+                                     :unconfigure (fn [] (swap! log conj [:unconfigure]))
+                                     :getCurrentTexture (fn [] #js {:createView (fn [] #js {:view true})})}]
+                          (set! (.-__fakegpu c) o) o))
                 (.call prev c kind)))))))
 
 (defn settle
