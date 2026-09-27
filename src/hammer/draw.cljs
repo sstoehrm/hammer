@@ -349,7 +349,10 @@
   (let [^State st (.-vnode inst)]
     (unwind! st)
     (dispose! st)
-    ((.-teardown! ^Backend (.-backend st)) st)
+    (try
+      ((.-teardown! ^Backend (.-backend st)) st)
+      (catch :default e
+        (js/console.error "hammer: teardown failed in" (cname st) e)))
     (cells/destroy! inst)))
 
 (defn component
