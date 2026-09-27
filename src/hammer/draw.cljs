@@ -132,25 +132,37 @@
   must not register them: gpu's :on-unsupported is the only one."
   #{:on-unsupported})
 
+(defn- event-type
+  "The DOM event type of opt key k (\"click\" for :on-click), or nil for
+  other keys and the non-event :on- keys."
+  [k]
+  (when (and (keyword? k) (not (contains? non-event-on-keys k)))
+    (let [n (name k)]
+      (when (str/starts-with? n "on-") (subs n 3)))))
+
 (defn- sync-listeners!
   "One listener per :on-<type> key of opts (excluding non-event :on- keys);
   listeners map keyed by type string."
   [^State st]
   (let [^js ls (.-listeners st)
         ^js c (.-canvas st)
-        want (into #{} (filter #(and (str/starts-with? (name %) "on-")
-                                      (not (contains? non-event-on-keys %))))
-                   (keys (.-opts st)))]
-    (doseq [k want
-            :let [t (subs (name k) 3)]
-            :when (not (.has ls t))]
-      (let [f (fn [e] (handle! st k e))]
-        (.set ls t f)
-        (.addEventListener c t f)))
-    (.forEach ls (fn [f t]
-                   (when-not (contains? want (keyword (str "on-" t)))
-                     (.removeEventListener c t f)
-                     (.delete ls t))))))
+        ;; type -> opt key, nil when opts have no event keys
+        ^js want (reduce-kv (fn [^js acc k _]
+                              (if-let [t (event-type k)]
+                                (doto (or acc (js/Map.)) (.set t k))
+                                acc))
+                            nil (.-opts st))]
+    (when want
+      (.forEach want (fn [k t]
+                       (when-not (.has ls t)
+                         (let [f (fn [e] (handle! st k e))]
+                           (.set ls t f)
+                           (.addEventListener c t f))))))
+    (when (pos? (.-size ls))
+      (.forEach ls (fn [f t]
+                     (when-not (and want (.has want t))
+                       (.removeEventListener c t f)
+                       (.delete ls t)))))))
 
 ;; ---- drawing
 

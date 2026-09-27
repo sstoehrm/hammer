@@ -3,6 +3,7 @@
             [hammer.test-env]
             [hammer.fake-canvas]
             [hammer.canvas :as cv :refer [defdraw]]
+            [hammer.draw :as draw]
             [hammer.events :as events]
             [hammer.state :as state]
             [hammer.testing :as t]))
@@ -71,3 +72,26 @@
     (events/dispatch [::set :cls "b"]) ; opts changed: applied
     (t/frame! 48)
     (is (= "b" (.-className c)))))
+
+(defdraw toggled [] [on? [:on?]]
+  {:size [10 10] :on-click (when on? [::pick])}
+  (fn [_ _]))
+
+(deftest nil-on-handler-ignores-events-until-set-again
+  (reset! state/app-db {:on? true})
+  (let [c (js/document.createElement "canvas")]
+    (cv/mount! [toggled] c)
+    (click! c 1 2)
+    (t/flush!)
+    (is (= [1 2] (:picked @state/app-db)))
+    (events/dispatch [::set :on? false])
+    (t/frame! 16)
+    (click! c 7 8)
+    (t/flush!)
+    (is (= [1 2] (:picked @state/app-db)) "nil handler: nothing dispatched")
+    (events/dispatch [::set :on? true])
+    (t/frame! 32)
+    (click! c 9 9)
+    (t/flush!)
+    (is (= [9 9] (:picked @state/app-db)))
+    (is (= 1 (.-size (.-listeners ^js (first (draw/states :canvas))))) "one listener throughout")))
