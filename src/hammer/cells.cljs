@@ -5,7 +5,12 @@
             [hammer.trie :as trie]
             [hammer.scheduler :as sched]))
 
-(deftype Comp [cname nprops specs body-deps body ^:mutable renders])
+;; A component that renders itself (e.g. a canvas) instead of through hammer.dom.
+;; run: (fn [inst]) on marks and prop changes, must clear (.-dirty inst);
+;; create: (fn [inst render el] → node); destroy: (fn [inst]) calls destroy!.
+(deftype Host [run create destroy])
+
+(deftype Comp [cname nprops specs body-deps body ^:mutable renders host])
 (deftype Spec [kind deps f g])
 ;; A subscribed slot: kind 0 path, 1 eq (is?), 2 local. path: the db path
 ;; (path, eq); v: the compared value (eq).
@@ -16,15 +21,18 @@
                    vals cells ^:mutable changed])
 
 (defn component
-  "Built by defc. specs: one {:kind :path|:eq|:expr, :deps [slot], :f fn} per
-  binding (an :eq f returns the path, its :g the compared value); body-deps:
-  the slots the body names."
-  [cname nprops specs body-deps body]
-  (Comp. cname nprops
-         (to-array (map (fn [{:keys [kind deps f g]}] (Spec. kind (to-array deps) f g)) specs))
-         (to-array body-deps) body 0))
+  "Built by defc (no host) or defdraw/defloop (with a Host). specs: one
+  {:kind :path|:eq|:expr, :deps [slot], :f fn} per binding (an :eq f returns
+  the path, its :g the compared value); body-deps: the slots the body names."
+  ([cname nprops specs body-deps body] (component cname nprops specs body-deps body nil))
+  ([cname nprops specs body-deps body host]
+   (Comp. cname nprops
+          (to-array (map (fn [{:keys [kind deps f g]}] (Spec. kind (to-array deps) f g)) specs))
+          (to-array body-deps) body 0 host)))
 
 (defn component? [x] (instance? Comp x))
+
+(defn host "The Host of component c, or nil." [^Comp c] (.-host c))
 
 (defn mark!
   "Marks a path, eq or local cell stale and schedules its instance."
@@ -217,3 +225,16 @@
         (if (== (.-kind cell) 2)
           (remove-watch (aget (.-vals inst) i) cell)
           (unsubscribe! cell))))))
+
+(defonce ^:private default-run (volatile! nil))
+
+(defn set-default-runner!
+  "f runs dirty instances whose component has no Host (hammer.dom registers it)."
+  [f]
+  (vreset! default-run f))
+
+(sched/set-runner!
+ (fn [^Instance inst]
+   (if-let [^Host h (.-host ^Comp (.-comp inst))]
+     ((.-run h) inst)
+     (when-let [r @default-run] (r inst)))))

@@ -6,8 +6,7 @@
   (:require [clojure.string :as str]
             [goog.object :as gobj]
             [hammer.cells :as cells]
-            [hammer.events :as events]
-            [hammer.scheduler :as sched]))
+            [hammer.events :as events]))
 
 ;; t :text/:el/:comp, or :tpl (from defc): tag = Tpl, attrs = hole values,
 ;; args (:comp) = the whole hiccup vector, props from index 1;
@@ -182,11 +181,11 @@
     (.forEach (.splice ref-queue 0) (fn [[f el]] (safe-ref! f el)))))
 
 (defn- node-of [^VNode v]
-  (if (keyword-identical? (.-t v) :comp)
+  (if (and (keyword-identical? (.-t v) :comp) (nil? (.-el v)))
     (node-of (.-vnode ^cells/Instance (.-inst v)))
     (.-el v)))
 
-(declare mount-inst! patch! create! unmount! patch-kids!)
+(declare mount-inst! patch! create! unmount! patch-kids! host-render)
 
 (defn- insert-from!
   "Creates nu[from..to) into one DocumentFragment and inserts it before anchor
@@ -359,9 +358,19 @@
           (set! (.-el v) el)
           el)
     :tpl (create-tpl! v depth)
-    :comp (let [inst (cells/create (.-comp v) (.-args v) 1 (inc depth))]
+    :comp (let [c (.-comp v)
+                inst (cells/create c (.-args v) 1 (inc depth))]
             (set! (.-inst v) inst)
-            (mount-inst! inst))))
+            (if-let [^cells/Host h (cells/host c)]
+              (let [n ((.-create h) inst host-render nil)]
+                (set! (.-el v) n)
+                n)
+              (mount-inst! inst)))))
+
+(defn- host-render
+  "Given to Host create: builds plain hiccup (no components) into a node."
+  [hiccup]
+  (create! (normalize hiccup) 0))
 
 (defn- body-vnode
   "Renders inst to a VNode; logs and returns nil if the body throws."
@@ -386,8 +395,10 @@
             (when-let [r (:ref (.-attrs v))] (safe-ref! r nil)))
     :tpl (unmount-tpl! v)
     :comp (let [inst (.-inst v)]
-            (unmount! (.-vnode ^cells/Instance inst))
-            (cells/destroy! inst))))
+            (if-let [^cells/Host h (cells/host (.-comp v))]
+              ((.-destroy h) inst)
+              (do (unmount! (.-vnode ^cells/Instance inst))
+                  (cells/destroy! inst))))))
 
 ;; ---- patch
 
@@ -574,8 +585,11 @@
       :tpl (patch-tpl! old nu depth)
       :comp (let [inst (.-inst old)]
               (set! (.-inst nu) inst)
+              (set! (.-el nu) (.-el old))
               (when (cells/set-props! inst (.-args nu) 1)
-                (update-inst! inst))))))
+                (if-let [^cells/Host h (cells/host (.-comp nu))]
+                  ((.-run h) inst)
+                  (update-inst! inst)))))))
 
 ;; ---- roots
 
@@ -611,7 +625,7 @@
     (set! (.-textContent ^js el) ""))
   (reset! roots {}))
 
-(sched/set-runner!
+(cells/set-default-runner!
  (fn [^cells/Instance inst]
    (if-not (.-mounted inst)
      (set! (.-dirty inst) false) ; unmounted by an earlier patch in this flush
