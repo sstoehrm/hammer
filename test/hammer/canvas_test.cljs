@@ -369,6 +369,42 @@
       (is (zero? @failed-init-draws))
       (finally (set! js/console.error orig)))))
 
+;; ---- #11 ruling: a defdraw doesn't redraw after a failed render (see
+;; throwing-opts-keep-last-content-until-a-good-render above), but a running
+;; defloop keeps animating with the previous opts/f, and its clock (:n) keeps
+;; advancing -- "a loop keeps running".
+
+(def loop-draws (atom []))
+
+(cv/defloop loop-opt-throws [] [x [:x]]
+  {:size [10 10] :attrs {:id (if (= x :bad) (throw (js/Error. "bad opts")) "lot")}}
+  (fn [_ctx {:keys [n]}] (swap! loop-draws conj [x n])))
+
+(deftest running-defloop-keeps-drawing-and-advances-its-clock-through-a-failed-render
+  (reset! state/app-db {:x 1})
+  (reset! loop-draws [])
+  (let [host (div)
+        orig js/console.error errs (atom 0)]
+    (set! js/console.error (fn [& _] (swap! errs inc)))
+    (try
+      (cv/mount! [loop-opt-throws] host)
+      (t/frame! 16)
+      (is (= [[1 1]] @loop-draws) "first frame draws with x=1, n=1")
+      (events/dispatch [::set :x :bad])
+      (t/frame! 32)
+      (is (= 1 @errs) "the failed render is logged once")
+      (is (= [[1 1] [1 2]] @loop-draws)
+          "still running: drew again with the previous f (x=1 captured), n advanced to 2")
+      (t/frame! 48)
+      (is (= [[1 1] [1 2] [1 3]] @loop-draws)
+          "keeps animating every frame while broken, n keeps advancing")
+      (events/dispatch [::set :x 5])
+      (t/frame! 64)
+      (is (= 1 @errs) "no new failure logged for the good render")
+      (is (= [[1 1] [1 2] [1 3] [5 4]] @loop-draws)
+          "the next good render replaces f, and the clock kept advancing throughout")
+      (finally (set! js/console.error orig)))))
+
 ;; ---- #13 / #14 / #15: standalone roots
 
 (def teardowns (atom 0))

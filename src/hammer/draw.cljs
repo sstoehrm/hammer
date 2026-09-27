@@ -16,7 +16,10 @@
 
 (defn register-backend! [kind ^Backend b] (aset backends (name kind) b))
 
-;; broken: the last render (opts/draw-fn) threw; nothing draws until one succeeds.
+;; broken: the last render (opts/draw-fn) threw. A defdraw (or a non-running
+;; defloop) doesn't draw until a render succeeds. A running defloop ignores
+;; broken and keeps animating with the previous opts/f -- "a loop keeps
+;; running" -- so its clock keeps advancing too.
 (deftype State [inst backend kind loop? canvas order
                 ^:mutable opts ^:mutable f ^:mutable broken ^:mutable ctx ^:mutable res ^:mutable inited
                 ^:mutable w ^:mutable h ^:mutable dpr
@@ -214,10 +217,13 @@
   (set! (.-inited st) false))
 
 (defn- will-draw?
-  "False while nothing can draw (no draw fn yet, last render failed, :init
-  failed): the frame then leaves the canvas, and its last content, alone."
+  "False while nothing can draw (no draw fn yet, :init failed, or the last
+  opts/draw-fn render failed): the frame then leaves the canvas, and its last
+  content, alone. Exception: a running defloop ignores a failed render and
+  keeps drawing with its previous opts/f -- a loop keeps running."
   [^State st]
-  (and (.-alive st) (some? (.-f st)) (not (.-broken st))
+  (and (.-alive st) (some? (.-f st))
+       (or (not (.-broken st)) (and (.-loop? st) (.-running st)))
        (not (keyword-identical? :failed (.-inited st)))))
 
 (defn- draw! [^State st ts]
