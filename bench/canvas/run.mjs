@@ -122,13 +122,18 @@ function serve() {
 
 // ---- in-page functions (serialized by puppeteer)
 
-// trigger → rAF → rAF → setTimeout(0), identical for both variants: hammer
-// requests its frame in a microtask after the trigger, so a single rAF could
-// fire before hammer draws. The trigger runs in its own setTimeout task, not
-// synchronously in page.evaluate: CDP's ScriptDuration does not count script
-// run directly by Runtime.callFunctionOn, so vanilla's synchronous op work
-// (DOM creation, getContext, textContent = '') would go unmeasured while
-// hammer's (deferred to a microtask by dispatch) would count.
+// trigger → rAF → rAF → setTimeout(0), identical for both variants: hammer's
+// frame! is requested from the trigger's own microtask (dispatch's drain,
+// then the scheduler's flush), both of which run before the browser's next
+// rAF callback, so hammer always draws in the *first* rAF after the trigger
+// -- same as vanilla, which requests that frame synchronously. The second
+// rAF is belt and braces (kept symmetric for both variants rather than
+// trusted to always be redundant); either way both draws land in the first
+// frame. The trigger runs in its own setTimeout task, not synchronously in
+// page.evaluate: CDP's ScriptDuration does not count script run directly by
+// Runtime.callFunctionOn, so vanilla's synchronous op work (DOM creation,
+// getContext, textContent = '') would go unmeasured while hammer's
+// (deferred to a microtask by dispatch) would count.
 const MEASURE = (op, k) => new Promise(resolve => {
   setTimeout(() => {
     const t0 = performance.now();

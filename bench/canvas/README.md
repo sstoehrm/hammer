@@ -68,10 +68,14 @@ median and p95, delta vs vanilla.
 - **wall**: `bench.run(op, k)` (via `page.evaluate`, in a `setTimeout(…, 0)`
   task: hammer `dispatch`es, vanilla mutates its state and requests a frame) until
   `requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(done, 0)))`,
-  identical for both. hammer requests its frame in a microtask after the
-  trigger, so a single rAF could fire before hammer draws. This is
-  frame-paced (60 Hz): for ops that fit in a frame both variants read one to
-  two frames and the delta is mostly phase noise.
+  identical for both. hammer's `frame!` is requested from the trigger's own
+  microtask (dispatch's drain, then the scheduler's flush), both of which run
+  before the browser's next rAF callback, so hammer draws in the same first
+  rAF as vanilla, which requests its frame synchronously; the second rAF is
+  just belt and braces, kept symmetric for both variants rather than relying
+  on that always holding. This is frame-paced (60 Hz): for ops that fit in a
+  frame both variants read one to two frames and the delta is mostly phase
+  noise.
 - **script / task**: CDP `Performance.getMetrics` `ScriptDuration` /
   `TaskDuration` delta around each trigger. Main-thread time, not
   frame-quantized; this is the column that shows overhead for small ops.
