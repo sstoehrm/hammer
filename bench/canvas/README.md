@@ -65,8 +65,8 @@ each iteration; `update`/`select`/`swap` run one `create` first, unthrottled.
 Then 3 warm-ups + N iterations, `gc()` (`--expose-gc`) before each. Reported:
 median and p95, delta vs vanilla.
 
-- **wall**: `bench.run(op, k)` (via `page.evaluate`: hammer `dispatch`es,
-  vanilla mutates its state and requests a frame) until
+- **wall**: `bench.run(op, k)` (via `page.evaluate`, in a `setTimeout(…, 0)`
+  task: hammer `dispatch`es, vanilla mutates its state and requests a frame) until
   `requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(done, 0)))`,
   identical for both. hammer requests its frame in a microtask after the
   trigger, so a single rAF could fire before hammer draws. This is
@@ -75,6 +75,11 @@ median and p95, delta vs vanilla.
 - **script / task**: CDP `Performance.getMetrics` `ScriptDuration` /
   `TaskDuration` delta around each trigger. Main-thread time, not
   frame-quantized; this is the column that shows overhead for small ops.
+  `ScriptDuration` does not count script that CDP's `Runtime.callFunctionOn`
+  runs synchronously, which is why the trigger runs in its own task: called
+  directly from `page.evaluate`, vanilla's synchronous op work (creating
+  canvases, `getContext`, `textContent = ''`) went uncounted while hammer's,
+  deferred to a microtask by `dispatch`, counted.
 - **CPU throttle**: CDP `Emulation.setCPUThrottlingRate` 4x for update,
   select and swap; none for create, clear and loops. Printed per row.
 - `select` targets a different row every iteration (`k` is passed through),

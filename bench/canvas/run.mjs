@@ -124,11 +124,17 @@ function serve() {
 
 // trigger → rAF → rAF → setTimeout(0), identical for both variants: hammer
 // requests its frame in a microtask after the trigger, so a single rAF could
-// fire before hammer draws.
+// fire before hammer draws. The trigger runs in its own setTimeout task, not
+// synchronously in page.evaluate: CDP's ScriptDuration does not count script
+// run directly by Runtime.callFunctionOn, so vanilla's synchronous op work
+// (DOM creation, getContext, textContent = '') would go unmeasured while
+// hammer's (deferred to a microtask by dispatch) would count.
 const MEASURE = (op, k) => new Promise(resolve => {
-  const t0 = performance.now();
-  window.bench.run(op, k);
-  requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(() => resolve(performance.now() - t0), 0)));
+  setTimeout(() => {
+    const t0 = performance.now();
+    window.bench.run(op, k);
+    requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(() => resolve(performance.now() - t0), 0)));
+  }, 0);
 });
 
 const GC = () => { if (window.gc) window.gc(); };
