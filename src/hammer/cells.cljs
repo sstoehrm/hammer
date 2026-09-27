@@ -247,11 +247,15 @@
   (.set roots el f))
 
 (defn unmount-roots!
-  "Unmounts every root, whichever renderer mounted it."
+  "Unmounts every root, whichever renderer mounted it. Each unmount fn runs
+  independently, so one throwing doesn't leave the rest of the roots mounted."
   []
   (let [fs (js/Array.from (.values roots))]
     (.clear roots)
-    (.forEach fs (fn [f] (f)))))
+    (.forEach fs (fn [f]
+                   (try (f)
+                        (catch :default e
+                          (js/console.error "hammer: unmount failed" e)))))))
 
 (defonce ^:private default-run (volatile! nil))
 

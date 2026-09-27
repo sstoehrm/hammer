@@ -91,6 +91,20 @@
     (is (not (.-dirty inst)))
     (is (= before (.-refs state/paths)))))
 
+(deftest unmount-roots-runs-every-root-even-if-one-throws
+  (let [el1 (js/document.createElement "div")
+        el2 (js/document.createElement "div")
+        unmounted (atom [])
+        orig js/console.error errs (atom 0)]
+    (cells/set-root! el1 (fn [] (throw (js/Error. "boom"))))
+    (cells/set-root! el2 (fn [] (swap! unmounted conj el2)))
+    (set! js/console.error (fn [& _] (swap! errs inc)))
+    (try
+      (cells/unmount-roots!)
+      (is (= [el2] @unmounted) "the second root's unmount fn still runs after the first throws")
+      (is (= 1 @errs) "the throwing unmount fn is logged, not left to crash the rest")
+      (finally (set! js/console.error orig)))))
+
 (deftype Fake [depth ^:mutable dirty id])
 
 (deftest scheduler-runs-parents-first-once
