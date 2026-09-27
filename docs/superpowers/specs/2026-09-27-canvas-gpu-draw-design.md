@@ -153,9 +153,10 @@ data rendered by user code.
 2. The scheduler's flush runs the instance's **draw runner**: `refresh!` recomputes
    bindings; if a slot the draw fn or opts name changed, the instance is queued for the
    next animation frame. It is never drawn in the microtask.
-3. At the frame: running `defloop`s advance (`:t :dt :n`), then every queued or running
-   draw instance is drawn once, in mount order. The browser
-   paints.
+3. At the frame: every queued or running draw instance is drawn once, in mount order.
+   A running `defloop`'s clock (`:t :dt :n`) advances only on frames that actually draw
+   it; while it can't draw (zero size, no draw context yet, a failed render or `:init`)
+   `:t` and `:n` stand still, and the next drawn frame gets `:dt` 0. The browser paints.
 
 Many events between two frames produce one draw per instance. DOM components keep
 their microtask flush.

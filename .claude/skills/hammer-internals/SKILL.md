@@ -103,14 +103,19 @@ runner** the scheduler calls instead of `dom/update-inst!` (`hammer.cells`'s sin
 `sched/set-runner!` dispatches on whether the instance's `Comp` has a host). On a mark,
 the scheduler's flush calls `run-host!`, which calls `cells/refresh!` (props, path,
 `is?` and derived slots, same as `defc`) and, if a slot the opts or draw fn name
-changed, re-evaluates them and `queue!`s the instance — it never draws in the
-microtask.
+changed, re-evaluates them (`rerender!`) and `queue!`s the instance — it never draws
+in the microtask. `rerender!` re-applies size, `:attrs` and `:on-*` listeners only when
+the new opts are not `=` to the last applied ones (`State.opts` is nil before the first
+render, so that one always applies).
 
 Draw components **only draw in `frame!`**: one shared `requestAnimationFrame` loop
 (requested only while something is queued or a mounted `defloop` has `:run?` truthy)
-that, each frame, advances every running loop's `:t`/`:dt`/`:n`, then calls `draw!` on
-every queued or running instance once, in mount order (`State.order`, an increasing
-sequence number), before the browser paints.
+that, each frame, calls `draw!` on every queued or running instance once, in mount
+order (`State.order`, an increasing sequence number), before the browser paints. A
+running `defloop`'s clock (`:t`/`:dt`/`:n`, `advance!`) moves only on frames where it
+actually draws: while it can't (zero size, no draw arg yet — e.g. the GPU device is
+pending — no draw fn, a failed render or `:init`), `:t` and `:n` stand still and
+`State.last` is reset, so the next drawn frame gets `:dt` 0.
 
 State (the canvas element, DPR, size, listeners, the current opts/draw fn, `:init`
 result, loop timing) is kept in `hammer.draw/State`, held in **the instance's `vnode`
