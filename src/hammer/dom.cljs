@@ -370,6 +370,13 @@
                           ;; create throws leaks that subscription forever.
                           (cells/destroy! inst)
                           (throw e)))]
+                (when-not n
+                  ;; node-of treats a :comp vnode with an el as hosted; a nil
+                  ;; node would surface later as an opaque DOM error.
+                  (try ((.-destroy h) inst)
+                       (catch :default _ (when (.-mounted inst) (cells/destroy! inst))))
+                  (throw (js/Error. (str "hammer: Host create of " (.-cname ^cells/Comp c)
+                                         " returned nil; it must return a DOM node"))))
                 (set! (.-el v) n)
                 n)
               (mount-inst! inst)))))

@@ -179,3 +179,28 @@
       (is (= [[:run 1] [:run 2]] @log4) "both hosted instances run")
       (is (= "<div><ul><i></i><i></i></ul><b>b</b></div>" (.-innerHTML el)) "the parent's patch completes")
       (is (= (repeat 2 ["hammer: update failed in" "runny"]) errs)))))
+
+;; ---- #17: a Host create that returns nil fails fast with a clear message
+
+(def log6 (atom []))
+
+(def hollow
+  (cells/component
+   "hollow" 0 [{:kind :path :deps [] :f (fn [] [:h])}] [0] (fn [v] [v])
+   (cells/Host.
+    (fn [^cells/Instance inst] (set! (.-dirty inst) false) (swap! log6 conj :run))
+    (fn [^cells/Instance _inst _render _el] nil)
+    (fn [^cells/Instance inst] (swap! log6 conj :destroy) (cells/destroy! inst)))))
+
+(defc holder6 [] [] [:div [hollow]])
+
+(deftest host-create-returning-nil-fails-fast
+  (reset! state/app-db {:h 1})
+  (reset! log6 [])
+  (let [el (js/document.createElement "div")
+        before (.-refs state/paths)
+        msg (try (dom/mount! [holder6] el) nil
+                 (catch :default e (.-message e)))]
+    (is (= "hammer: Host create of hollow returned nil; it must return a DOM node" msg))
+    (is (= [:destroy] @log6) "the host's own destroy cleans up the half-created instance")
+    (is (= before (.-refs state/paths)) "no leaked subscription")))
