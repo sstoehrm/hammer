@@ -158,3 +158,55 @@
     (fg/restore!)
     (is (identical? orig (.-getContext proto)) "getContext is the pre-install fn, not a wrapper chain")
     (is (= had-gpu? (.hasOwnProperty js/navigator "gpu")) "navigator.gpu back to its original state")))
+
+;; ---- #5: a device request that is pending across reset-device! is stale
+
+(def dev-ids (atom []))
+
+(defdraw dev-probe [] [] {:size [10 10] :on-unsupported (fn [r] (swap! unsupported conj r))}
+  (fn [g _] (swap! dev-ids conj (.-id ^js (:device g)))))
+
+(defn- stale-request-then-fresh-device!
+  "Mounts on a :deferred gpu (request pending), resets the device, mounts on
+  a fresh :ok gpu, and calls (then stale) once that device is ready, where
+  stale is the old pending request's {:resolve :reject}."
+  [then]
+  (fg/install! :deferred)
+  (gpu/mount! [dev-probe] (js/document.createElement "canvas"))
+  (let [stale @fg/adapter-request]
+    (t/reset-app!)
+    (gpu/reset-device!)
+    (fg/install! :ok)
+    (gpu/mount! [dev-probe] (js/document.createElement "canvas"))
+    (fg/settle #(then stale))))
+
+(deftest stale-adapter-result-does-not-replace-the-device
+  (async done
+    (reset! dev-ids [])
+    (stale-request-then-fresh-device!
+     (fn [stale]
+       ((:resolve stale))
+       (fg/settle
+        (fn []
+          (t/frame! 16)
+          (is (= [1] @dev-ids) "draws on the current device (id 1), not the stale request's")
+          (is (= 1 (count (filter #(= [:device] %) @fg/log))) "the stale adapter never requests a device")
+          (done)))))))
+
+(deftest stale-adapter-rejection-does-not-mark-unsupported
+  (async done
+    (reset! dev-ids [])
+    (reset! unsupported [])
+    (let [orig js/console.error errs (atom 0)]
+      (set! js/console.error (fn [& _] (swap! errs inc)))
+      (stale-request-then-fresh-device!
+       (fn [stale]
+         ((:reject stale) (js/Error. "stale"))
+         (fg/settle
+          (fn []
+            (set! js/console.error orig)
+            (t/frame! 16)
+            (is (empty? @unsupported) "the stale rejection does not run the unsupported path")
+            (is (zero? @errs))
+            (is (= [1] @dev-ids) "the current device keeps drawing")
+            (done))))))))

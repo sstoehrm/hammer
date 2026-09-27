@@ -14,13 +14,17 @@
 (def is? app/is?)
 (def mount! draw/mount!)
 
-;; status: :idle :pending :ready :unsupported
-(deftype Dev [^:mutable status ^:mutable device ^:mutable format ^:mutable reason waiting])
-(defonce ^:private dev (Dev. :idle nil nil nil (js/Set.)))
+;; status: :idle :pending :ready :unsupported. gen: bumped by every request
+;; and by reset-device!; a request's callbacks act only while gen is unchanged.
+(deftype Dev [^:mutable status ^:mutable device ^:mutable format ^:mutable reason waiting
+              ^:mutable gen])
+(defonce ^:private dev (Dev. :idle nil nil nil (js/Set.) 0))
 
 (defn reset-device!
-  "Test hook: forget the device and any waiting components."
+  "Test hook: forget the device and any waiting components. A request still
+  pending is ignored when it completes."
   []
+  (set! (.-gen dev) (inc (.-gen dev)))
   (set! (.-status dev) :idle)
   (set! (.-device dev) nil)
   (.clear (.-waiting dev)))
@@ -84,7 +88,12 @@
 (defn- acquire! []
   (when (keyword-identical? (.-status dev) :idle)
     (set! (.-status dev) :pending)
-    (let [^js gpu (.-gpu js/navigator)]
+    (set! (.-gen dev) (inc (.-gen dev)))
+    (let [^js gpu (.-gpu js/navigator)
+          g (.-gen dev)
+          ;; a result that arrives after reset-device! (or a newer request)
+          ;; must not overwrite the current device state.
+          current? (fn [] (== g (.-gen dev)))]
       (if-not gpu
         (unsupported! "navigator.gpu is missing")
         ;; the failure callback of each `.then` is passed as its second arg
@@ -95,12 +104,13 @@
         ;; re-run the unsupported path.
         (.then (.requestAdapter gpu)
                (fn [^js a]
-                 (if-not a
-                   (unsupported! "no WebGPU adapter")
-                   (.then (.requestDevice a)
-                          (fn [d] (ready! d (.getPreferredCanvasFormat gpu)))
-                          (fn [e] (unsupported! (str e))))))
-               (fn [e] (unsupported! (str e))))))))
+                 (when (current?)
+                   (if-not a
+                     (unsupported! "no WebGPU adapter")
+                     (.then (.requestDevice a)
+                            (fn [d] (when (current?) (ready! d (.getPreferredCanvasFormat gpu))))
+                            (fn [e] (when (current?) (unsupported! (str e))))))))
+               (fn [e] (when (current?) (unsupported! (str e)))))))))
 
 (draw/register-backend!
  :gpu
