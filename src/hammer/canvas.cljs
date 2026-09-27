@@ -15,7 +15,12 @@
  :canvas
  (draw/Backend.
   (fn [^draw/State st _render]
-    (set! (.-ctx st) (.getContext ^js (.-canvas st) "2d"))
+    (let [ctx (.getContext ^js (.-canvas st) "2d")]
+      (when-not ctx
+        ;; nil here means the canvas was already put into another mode (e.g.
+        ;; "webgpu"); a 2d context can never be obtained from it afterwards.
+        (js/console.error "hammer: 2d context unavailable (canvas already used for WebGPU?)"))
+      (set! (.-ctx st) ctx))
     (.-canvas st))
   (fn [^draw/State st]
     (when-let [^js ctx (.-ctx st)]

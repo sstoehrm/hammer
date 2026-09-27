@@ -114,7 +114,10 @@
       (set! (.-ext st) #js {:wrap wrap :render render})
       (acquire!)
       (case (.-status dev)
-        :ready (configure! st)
+        ;; same guard as ready!'s forEach below: a mount that lands here after
+        ;; the device is already :ready must not let its own configure!
+        ;; failure (e.g. an adopted canvas already in 2d mode) escape setup!.
+        :ready (try (configure! st) (catch :default e (js/console.error "hammer: gpu configure failed" e)))
         :unsupported (fallback! st)
         (.add (.-waiting dev) st))
       (or wrap (.-canvas st))))
@@ -124,6 +127,9 @@
         (let [^js d (.-device dev)]
           {:device d :queue (.-queue d) :context ctx :format (.-format dev)
            :view (.createView (.getCurrentTexture ctx))}))))
+  ;; resized!: a no-op. getCurrentTexture always follows the canvas's current
+  ;; backing-store size, and the context's configure call persists across a
+  ;; resize -- only device loss needs a reconfigure.
   (fn [_] nil)
   (fn [^draw/State st]
     (.delete (.-waiting dev) st)

@@ -63,7 +63,9 @@
   [env macro kind loop? cname props bindings more]
   (check-slots! macro cname props bindings)
   (let [[opts draw] (case (count more)
-                      1 [nil (first more)]
+                      1 (if (map? (first more))
+                          (throw (ex-info (str macro ": missing draw-fn after opts") {:name cname}))
+                          [nil (first more)])
                       2 (if (map? (first more))
                           more
                           (throw (ex-info (str macro ": opts must be a literal map") {:name cname})))

@@ -26,12 +26,12 @@
                    :vy (if (or (< y 0) (> y h)) (- vy) vy))))
         balls))
 
-(defloop balls [] [world (atom (vec (repeatedly 200 #(hash-map :x (rand 600) :y (rand 200)
-                                                                 :vx (- (rand 0.4) 0.2) :vy (- (rand 0.4) 0.2)))))
+(defloop balls [] [world (volatile! (vec (repeatedly 200 #(hash-map :x (rand 600) :y (rand 200)
+                                                                       :vx (- (rand 0.4) 0.2) :vy (- (rand 0.4) 0.2)))))
                    paused? [:paused?]]
   {:size [600 200] :run? (not paused?)}
   (fn [ctx {:keys [w h dt]}]
-    (swap! world step dt w h)
+    (vswap! world step dt w h)
     (.clearRect ctx 0 0 w h)
     (set! (.-fillStyle ctx) "darkorange")
     (doseq [{:keys [x y]} @world] (.fillRect ctx x y 3 3))))

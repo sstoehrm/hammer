@@ -7,7 +7,8 @@
             [hammer.draw :as draw]
             [hammer.events :as events]
             [hammer.state :as state]
-            [hammer.testing :as t]))
+            [hammer.testing :as t])
+  (:require-macros [hammer.macro-probe :refer [expand-error]]))
 
 (use-fixtures :each {:before (fn [] (t/reset-app!) (t/use-fake-frames!) (reset! fake/log []))})
 
@@ -237,3 +238,64 @@
           "auto-size CSS restored when switching back from a fixed size")
       (is (= [(.-clientWidth c) (.-clientHeight c)] [(.-w st) (.-h st)])
           "w/h re-measured from the live box, not left at the stale fixed value"))))
+
+;; ---- fix round 2: final whole-branch review
+
+(deftest draw-def-rejects-a-bare-map-as-draw-fn
+  (is (= "defdraw: missing draw-fn after opts"
+         (expand-error (hammer.canvas/defdraw bad [] [] {:size [1 1]})))
+      "a lone map literal must not be silently accepted as the draw fn")
+  (is (nil? (expand-error (hammer.canvas/defdraw ok [] [] (fn [_ _])))))
+  (is (nil? (expand-error (hammer.canvas/defdraw ok2 [] [] {:size [1 1]} (fn [_ _]))))))
+
+(defdraw bad-size [] [] {:size 5} (fn [_ _]))
+
+(deftest throwing-opts-during-mount-cleans-up-draw-state
+  (reset! state/app-db {})
+  (is (empty? (draw/states :canvas)) "sanity: nothing left over from an earlier test")
+  (is (thrown? js/Error (cv/mount! [bad-size] (div)))
+      "rerender! throws while destructuring the bad :size value")
+  (is (empty? (draw/states :canvas))
+      "a throwing rerender! inside create-host must still unwind! the state"))
+
+(defdraw watched [] [] {:size [10 10] :on-unsupported (fn [_])}
+  (fn [_ _]))
+
+(deftest on-unsupported-is-not-registered-as-a-dom-listener
+  (reset! state/app-db {})
+  (let [host (div)]
+    (cv/mount! [watched] host)
+    (t/frame! 16)
+    (let [c (.-firstChild host)
+          st (first (filter #(identical? c (.-canvas %)) (draw/states :canvas)))]
+      (is (zero? (.-size (.-listeners st)))
+          ":on-unsupported is gpu-only bookkeeping, not a DOM event to listen for"))))
+
+(deftest null-2d-context-is-logged-once
+  (reset! state/app-db {})
+  (let [c (js/document.createElement "canvas")]
+    (set! (.-getContext c) (fn [_] nil)) ; simulates a canvas already used for WebGPU
+    (let [orig js/console.error errs (atom 0)]
+      (set! js/console.error (fn [& _] (swap! errs inc)))
+      (try
+        (cv/mount! [bars "red" "null2d"] c)
+        (is (= 1 @errs) "a null 2d context is logged once at setup")
+        (t/frame! 16)
+        (is (= 1 @errs) "no ctx: draw-arg returns nil, so the frame draws nothing and logs nothing more")
+        (finally (set! js/console.error orig))))))
+
+(defc show-wrap [] [show? [:show?]]
+  [:div (when show? [with-res])])
+
+(deftest dispose-runs-when-a-draw-component-unmounts-from-inside-a-defc
+  (reset! state/app-db {:n 1 :show? true})
+  (reset! res-log [])
+  (let [host (div)]
+    (core/mount! [show-wrap] host)
+    (t/frame! 16)
+    (is (some #(= :init (first %)) @res-log) "mounted and initialized")
+    (reset! res-log [])
+    (events/dispatch [::set :show? false])
+    (t/flush!)
+    (is (= [[:dispose {:r 1}]] @res-log)
+        "unmounting the embedded draw component (show? -> false) runs :dispose")))

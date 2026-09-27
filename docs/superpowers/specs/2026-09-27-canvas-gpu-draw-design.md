@@ -218,7 +218,7 @@ embeds a chart requires `hammer.core` and `hammer.canvas`.
 
 `Comp` gains a runner (and a host, below). The scheduler calls the instance's
 component runner instead of one global runner. DOM components keep `dom/update-inst!`;
-draw components use `draw/run!` (refresh, then queue for the frame).
+draw components use `draw/run-host!` (refresh, then queue for the frame).
 
 ### Host hook (DOM embedding without a dependency)
 
@@ -244,8 +244,9 @@ it: create, patch (props via `set-props!`), keyed moves (via `node`), and unmoun
 
 - **Unit (node + jsdom, `npm test`):**
   - a recording fake 2D context: draw calls, transforms, DPR setup;
-  - a fake rAF clock, driven from `hammer.testing`: a new `(frame! ms)` advances the
-    loop, and `flush!` also runs queued draws.
+  - a fake rAF clock, driven from `hammer.testing`: `flush!` never draws;
+    `hammer.testing/frame!` flushes queued events/renders and then runs one draw
+    frame at time `ms`.
 - **Canvas cases:**
   - redraw only when a named slot changes;
   - many events → one draw per frame;

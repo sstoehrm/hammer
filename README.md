@@ -72,11 +72,19 @@ running app already has, instead of resetting it.
 `hammer.testing` provides:
 
 - `(flush!)` — drains queued events, then renders until nothing is dirty
-  (synchronous equivalent of the event + render microtasks).
+  (synchronous equivalent of the event + render microtasks). `flush!` alone
+  never draws `defdraw`/`defloop` components — they only draw at a frame.
 - `(renders c)` / `(reset-renders! & cs)` — a component's render count since
   the last reset; use to assert that only the expected components re-rendered.
 - `(reset-app!)` — unmounts every root and empties `app-db`; use as a
   `:before` fixture between tests.
+- `(use-fake-frames!)` — replaces `requestAnimationFrame` so `defdraw`/`defloop`
+  components draw only when the test calls `frame!`, never on a real animation
+  frame; add it to the same `:before` fixture as `reset-app!` in any test that
+  touches `hammer.canvas`/`hammer.gpu`.
+- `(frame! ms)` — `flush!` plus one draw frame at time `ms`: drains events,
+  renders, then draws every queued or running `defdraw`/`defloop` instance
+  once, as `requestAnimationFrame` would at time `ms`.
 
 ## Canvas and WebGPU
 
@@ -99,10 +107,10 @@ hammer decides when to call it — it never clears the canvas for you.
       (set! (.-fillStyle ctx) (if (= id sel) "red" "gray"))
       (.fillRect ctx x y 4 4))))
 
-(defloop balls [] [world (atom (init-world 200)) paused? [:paused?]]
+(defloop balls [] [world (volatile! (init-world 200)) paused? [:paused?]]
   {:run? (not paused?)}
   (fn [ctx {:keys [w h dt]}]
-    (swap! world step dt)
+    (vswap! world step dt)
     (render ctx w h @world)))
 
 (defc page [] [] [:div [:h1 "Readings"] [chart] [balls]])   ; draw components embed in DOM hiccup
@@ -113,15 +121,23 @@ whose values see the props and bindings in scope, like the body; `draw-fn` is
 likewise an expression in that scope, re-evaluated only when a slot it names
 changes.
 
+Per-frame mutable state (like `balls`' `world` above) belongs in a `volatile!`
+binding, not an atom or the db. An atom binding is watched: mutating it every
+frame marks the instance and re-evaluates `opts` and the draw fn on top of the
+loop's own per-frame draw, and a db write costs an event round trip on top of
+that. A `volatile!` init has no named deps, so it's a plain derived binding —
+computed once at `create` and never re-run — and `vswap!`/`@` inside the draw
+fn just mutates it directly, same as an atom would, without the watch.
+
 | Option | Variants | Meaning |
 |---|---|---|
-| `:size` | all | `[w h]` in CSS pixels. Absent: the canvas fills its CSS box and follows it (`ResizeObserver`). |
+| `:size` | all | `[w h]` in CSS pixels. Absent: the canvas fills its CSS box and follows it (`ResizeObserver`) — give the container a CSS height, or the box is 0px tall and the canvas never draws. |
 | `:run?` | `defloop` | Loop runs while truthy. Default `true`. While paused, it still redraws on binding changes (with `:dt 0`). |
 | `:max-dt` | `defloop` | Cap for `:dt` in ms. Default `100`. |
 | `:init` | all | `(fn [ctx-or-gpu info] res)`, run once before the first draw (GPU: after the device is ready; again after device loss). |
 | `:dispose` | all | `(fn [res])`, run on unmount (and before re-init after device loss). |
 | `:on-*` | all | Canvas DOM events, e.g. `:on-click`, `:on-pointermove`. A fn gets `(e {:x :y})` in canvas-local CSS pixels; an event vector is dispatched with `x y` appended, e.g. `[:pick]` → `[:pick 120 48]`. |
-| `:fallback` | `hammer.gpu` | Hiccup rendered instead of the canvas when WebGPU is unavailable (DOM embedding only). **Must be plain hiccup with no components** — it is rendered once through the DOM renderer's internal host-render and is never mounted or unmounted as a component tree. |
+| `:fallback` | `hammer.gpu` | Hiccup rendered instead of the canvas when WebGPU is unavailable (DOM embedding only). **Static: plain hiccup only** — no components, no `:on-*` handlers, no `:ref`. It is rendered once through the DOM renderer's internal host-render and is never mounted or unmounted as a component tree, so nothing in it is reactive. |
 | `:on-unsupported` | `hammer.gpu` | `(fn [reason])` called when WebGPU is unavailable. |
 | `:attrs` | all | Extra attributes for the `<canvas>` element (`:class`, `:style`, `:aria-label`, …). |
 

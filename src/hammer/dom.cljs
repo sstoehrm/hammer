@@ -362,7 +362,14 @@
                 inst (cells/create c (.-args v) 1 (inc depth))]
             (set! (.-inst v) inst)
             (if-let [^cells/Host h (cells/host c)]
-              (let [n ((.-create h) inst host-render nil)]
+              (let [n (try
+                        ((.-create h) inst host-render nil)
+                        (catch :default e
+                          ;; the instance's bindings already subscribed paths
+                          ;; in cells/create above; without this, a Host whose
+                          ;; create throws leaks that subscription forever.
+                          (cells/destroy! inst)
+                          (throw e)))]
                 (set! (.-el v) n)
                 n)
               (mount-inst! inst)))))

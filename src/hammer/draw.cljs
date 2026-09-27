@@ -126,12 +126,20 @@
         (vector? h) (events/dispatch (if xy (into h xy) h))
         (fn? h) (h e (when xy {:x (nth xy 0) :y (nth xy 1)}))))))
 
+(def ^:private non-event-on-keys
+  "Opt keys starting with \"on-\" that are not DOM events, so sync-listeners!
+  must not register them: gpu's :on-unsupported is the only one."
+  #{:on-unsupported})
+
 (defn- sync-listeners!
-  "One listener per :on-<type> key of opts; listeners map keyed by type string."
+  "One listener per :on-<type> key of opts (excluding non-event :on- keys);
+  listeners map keyed by type string."
   [^State st]
   (let [^js ls (.-listeners st)
         ^js c (.-canvas st)
-        want (into #{} (filter #(str/starts-with? (name %) "on-")) (keys (.-opts st)))]
+        want (into #{} (filter #(and (str/starts-with? (name %) "on-")
+                                      (not (contains? non-event-on-keys %))))
+                   (keys (.-opts st)))]
     (doseq [k want
             :let [t (subs (name k) 3)]
             :when (not (.has ls t))]
@@ -292,8 +300,8 @@
       (.add all st)
       (when loop? (.add loops st))
       (hook-resize!)
-      (rerender! st)
       (try
+        (rerender! st)
         ((.-setup! ^Backend backend) st render)
         (catch :default e
           (unwind! st)

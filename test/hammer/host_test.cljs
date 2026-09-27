@@ -77,6 +77,34 @@
     (is (= #{[:destroy 2] [:run [1 :b]] [:run [3 :b]]} (set @log))
         "no [:run [2 :b]] for the removed instance")))
 
+;; ---- a Host whose create throws must not leak the instance's subscription
+
+(def log3 (atom []))
+
+(def boom-host
+  "A hosted component with one path binding whose Host's create always
+  throws, to check dom.cljs's create! destroys the instance (and unsubscribes
+  its cell) instead of leaving a half-created, still-subscribed instance."
+  (cells/component
+   "boom-host" 0 [{:kind :path :deps [] :f (fn [] [:boom])}] [0] (fn [v] [v])
+   (cells/Host.
+    (fn [inst] (set! (.-dirty inst) false) (cells/refresh! inst)
+      (swap! log3 conj [:run (aget (.-vals inst) 0)]))
+    (fn [_inst _render _el] (throw (js/Error. "create boom")))
+    (fn [inst] (swap! log3 conj [:destroy]) (cells/destroy! inst)))))
+
+(defc holder3 [] [] [:div [boom-host]])
+
+(deftest hosted-create-throw-destroys-instance-and-does-not-leak-subscription
+  (reset! state/app-db {:boom 1})
+  (reset! log3 [])
+  (let [el (js/document.createElement "div")
+        before (.-refs state/paths)]
+    (is (thrown? js/Error (dom/mount! [holder3] el)) "create boom propagates")
+    (is (= before (.-refs state/paths)) "the failed instance's path subscription was cleaned up")
+    (events/dispatch-sync [::set :boom 2])
+    (is (= [] @log3) "a later db change on its path must not run the destroyed instance")))
+
 (deftest hosted-component-prop-change-keeps-node
   "A non-key prop change on a hosted component (its key/id is unchanged) must
   run the host, with the new prop values, and keep the host's DOM node."
