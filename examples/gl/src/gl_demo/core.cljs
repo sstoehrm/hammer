@@ -34,7 +34,7 @@ void main() { outColor = u_color; }
     (.shaderSource g s src)
     (.compileShader g s)
     (when-not (.getShaderParameter g s (.-COMPILE_STATUS g))
-      (js/console.error "hammer: shader compile failed" (.getShaderInfoLog g s)))
+      (js/console.error "gl-demo: shader compile failed" (.getShaderInfoLog g s)))
     s))
 
 (defn- init-triangle [^js g _info]
@@ -46,7 +46,7 @@ void main() { outColor = u_color; }
     (.attachShader g prog fs)
     (.linkProgram g prog)
     (when-not (.getProgramParameter g prog (.-LINK_STATUS g))
-      (js/console.error "hammer: program link failed" (.getProgramInfoLog g prog)))
+      (js/console.error "gl-demo: program link failed" (.getProgramInfoLog g prog)))
     (.deleteShader g vs)
     (.deleteShader g fs)
     (.bindBuffer g (.-ARRAY_BUFFER g) buf)
@@ -82,7 +82,7 @@ void main() { outColor = u_color; }
    [:h2 "Pulse (defloop): animates every frame"]
    [:div [pulse]]
    [:h2 "Triangle (defdraw + :init)"]
-   [:button {:on-click [:toggle-tri]} (if on "Toggle (green)" "Toggle (pink)")]
+   [:button {:on-click [:toggle-tri]} (if on "Make it pink" "Make it green")]
    [:div [triangle]]])
 
 (defn ^:export main [] (mount! [page] (js/document.getElementById "app") {:n 0 :tri-on false}))

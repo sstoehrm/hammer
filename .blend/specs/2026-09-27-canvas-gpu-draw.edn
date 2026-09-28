@@ -8,10 +8,12 @@
          :core {:name "hammer.core" :type "facade" :desc "DOM facade: app API + defc + mount! (unchanged)"}
          :draw {:name "hammer.draw" :type "renderer" :desc "draw runner, rAF queue + loop, canvas host (DPR, resize, events)"}
          :canvas {:name "hammer.canvas" :type "facade" :desc "Canvas 2D: app API + defdraw/defloop + mount!"}
-         :gpu {:name "hammer.gpu" :type "facade" :desc "WebGPU: app API + defdraw/defloop + mount! + device mgmt + pass"}
-         :size-dom {:name "size/dom" :type "build" :desc "must not contain draw/canvas/gpu"}
-         :size-canvas {:name "size/canvas" :type "build" :desc "must not contain dom/gpu"}
-         :size-gpu {:name "size/gpu" :type "build" :desc "must not contain dom/canvas"}
+         :gl {:name "hammer.gl" :type "facade" :desc "WebGL2: app API + defdraw/defloop + mount!; :context-attrs, :fallback/:on-unsupported, webglcontextlost/restored"
+              :note "Superseded: this spec originally planned hammer.gpu (WebGPU); the shipped facade is hammer.gl (WebGL2) -- WebGPU is not usable by default in Firefox or on Linux Chromium. See docs/superpowers/specs/2026-09-28-webgl2-backend-design.md. Renamed here from :gpu (no device mgmt/pass; one WebGL2RenderingContext per component)."}
+         :size-dom {:name "size/dom" :type "build" :desc "must not contain draw/canvas/gl"}
+         :size-canvas {:name "size/canvas" :type "build" :desc "must not contain dom/gl"}
+         :size-gl {:name "size/gl" :type "build" :desc "must not contain dom/canvas"
+                   :note "Superseded: renamed here from :size-gpu along with :gpu -> :gl."}
          :bb-sizes {:name "bb sizes" :type "tooling" :desc "gzip sizes + namespace checks"}}
  :edges {[:trie :cells] {:direction :-> :name "mark!"}
          [:cells :scheduler] {:direction :-> :name "schedule!"}
@@ -21,21 +23,21 @@
          [:core :dom] {:direction :-> :name "requires"}
          [:canvas :app] {:direction :-> :name "re-exports"}
          [:canvas :draw] {:direction :-> :name "requires"}
-         [:gpu :app] {:direction :-> :name "re-exports"}
-         [:gpu :draw] {:direction :-> :name "requires"}
+         [:gl :app] {:direction :-> :name "re-exports"}
+         [:gl :draw] {:direction :-> :name "requires"}
          [:scheduler :dom] {:direction :-> :name "DOM runner (microtask)"}
          [:scheduler :draw] {:direction :-> :name "draw runner (→ next rAF)"}
          [:dom :draw] {:direction :<- :name "host hook (dom never requires draw)" :type "plugin"}
          [:macros :core] {:direction :-> :name "defc"}
          [:macros :canvas] {:direction :-> :name "defdraw/defloop"}
-         [:macros :gpu] {:direction :-> :name "defdraw/defloop"}
+         [:macros :gl] {:direction :-> :name "defdraw/defloop"}
          [:size-dom :core] {:direction :-> :name "builds"}
          [:size-canvas :canvas] {:direction :-> :name "builds"}
-         [:size-gpu :gpu] {:direction :-> :name "builds"}
+         [:size-gl :gl] {:direction :-> :name "builds"}
          [:bb-sizes :size-dom] {:direction :-> :name "checks"}
          [:bb-sizes :size-canvas] {:direction :-> :name "checks"}
-         [:bb-sizes :size-gpu] {:direction :-> :name "checks"}}
+         [:bb-sizes :size-gl] {:direction :-> :name "checks"}}
  :boxes {:runtime {:name "shared runtime" :type "layer" :components #{:events :trie :cells :scheduler :app :macros}}
          :renderers {:name "renderers" :type "layer" :components #{:dom :draw}}
-         :facades {:name "facades (what apps require)" :type "layer" :components #{:core :canvas :gpu}}
-         :builds {:name "size builds" :type "layer" :components #{:size-dom :size-canvas :size-gpu :bb-sizes}}}}
+         :facades {:name "facades (what apps require)" :type "layer" :components #{:core :canvas :gl}}
+         :builds {:name "size builds" :type "layer" :components #{:size-dom :size-canvas :size-gl :bb-sizes}}}}
