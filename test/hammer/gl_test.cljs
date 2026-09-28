@@ -6,7 +6,7 @@
             ;; fake-canvas's __fake2d flag, and must not depend on some other
             ;; namespace happening to load it into the bundle first.
             [hammer.fake-canvas]
-            [hammer.test-util :refer [capture-errors]]
+            [hammer.test-util :refer [capture-errors capture-warnings]]
             [hammer.core :as core :refer [defc]]
             [hammer.gl :as gl :refer [defdraw defloop]]
             [hammer.draw :as draw]
@@ -55,7 +55,7 @@
     (is (= 1 (count (filter #(= "hammer: WebGL2 unavailable:" (first %)) logs))))
     (is (= 2 (.-length (.querySelectorAll host "p"))))
     (is (= 0 (.-length (.querySelectorAll host "canvas"))))
-    (is (= [[:unsupported "no WebGL2 context"] [:unsupported "no WebGL2 context"]] @res-log))))
+    (is (= [[:unsupported "no WebGL2 context (canvas already has another context type?)"] [:unsupported "no WebGL2 context (canvas already has another context type?)"]] @res-log))))
 
 (def fb-log (atom []))
 
@@ -100,7 +100,7 @@
           "the other DOM-embedded component still draws")
       (is (= [[:viewport 0 0 100 50] [:clearColor 0 0 0 1] [:drawArrays 4 0 5]] (ops "y"))
           "...and so does its sibling")
-      (is (= [[:unsupported "no WebGL2 context"] [:init] [:draw :prog 5] [:init] [:draw :prog 5]]
+      (is (= [[:unsupported "no WebGL2 context (canvas already has another context type?)"] [:init] [:draw :prog 5] [:init] [:draw :prog 5]]
              @res-log)))))
 
 (defn- fire! [^js c type]
@@ -123,6 +123,38 @@
     (fire! c "webglcontextrestored")
     (t/frame! 48)
     (is (= [[:dispose :prog] [:init] [:draw :prog 2]] @res-log))))
+
+(deftest webglcontextlost-warns-once-naming-the-component
+  (reset! state/app-db {:n 1})
+  (let [c (js/document.createElement "canvas")]
+    (gl/mount! [tri "w"] c)
+    (t/frame! 16)
+    (let [logs (capture-warnings (fn [_] (fire! c "webglcontextlost")))]
+      (is (= 1 (count logs)) "exactly one console.warn for the loss")
+      (is (some #(= "tri" %) (first logs)) "names the lost component"))))
+
+(deftest loss-then-unmount-disposes-once
+  (reset! state/app-db {:n 1})
+  (reset! res-log [])
+  (let [host (js/document.createElement "div")]
+    (gl/mount! [tri "lu"] host)
+    (t/frame! 16)
+    (reset! res-log [])
+    (let [^js c (.querySelector host "canvas")]
+      (fire! c "webglcontextlost")
+      (is (= [[:dispose :prog]] @res-log) "loss disposes")
+      (t/reset-app!)
+      (is (= [[:dispose :prog]] @res-log) "unmount after loss does not dispose a second time"))))
+
+(deftest dispose-runs-on-a-plain-gl-unmount
+  (reset! state/app-db {:n 1})
+  (reset! res-log [])
+  (let [host (js/document.createElement "div")]
+    (gl/mount! [tri "p"] host)
+    (t/frame! 16)
+    (reset! res-log [])
+    (t/reset-app!)
+    (is (= [[:dispose :prog]] @res-log) "unmount (no loss) still runs :dispose")))
 
 (deftest unmount-releases-a-hammer-created-canvas
   (reset! state/app-db {:n 1})

@@ -55,10 +55,12 @@
           ^js g (.getContext c "webgl2" (clj->js (or (:context-attrs (.-opts st)) {})))]
       (set! (.-ext st) ext)
       (if-not g
-        (unsupported! st "no WebGL2 context")
+        (unsupported! st "no WebGL2 context (canvas already has another context type?)")
         (let [on-lost (fn [^js e]
                         (.preventDefault e)
                         (set! (.-lost ext) true)
+                        (js/console.warn "hammer: WebGL2 context lost in" (draw/component-name st)
+                                          "-- it stays blank until the browser restores it")
                         (draw/dispose! st))
               on-restored (fn [_]
                             (set! (.-lost ext) false)

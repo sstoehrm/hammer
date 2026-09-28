@@ -9,7 +9,10 @@
   store. :context-attrs (e.g. {:antialias false}) is read once, at creation.
   :fallback is static plain hiccup (no components, :on-*, :ref), rendered
   when the browser has no WebGL2. Each component owns one context; browsers
-  cap live contexts per page (about 16), and unmount releases it."
+  cap live contexts per page (about 16), and unmount releases it. If the
+  component's first render throws, opts are never available at setup, so
+  :context-attrs falls back to its default and no :fallback/:on-unsupported
+  runs for that mount."
   [cname props bindings & more]
   (m/draw-def &env "defdraw" :gl false cname props bindings more))
 

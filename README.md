@@ -180,7 +180,11 @@ pulsing loop, plus a shader-drawn triangle, with a fallback message when
 WebGL2 is unavailable).
 
 WebGL2 needs no flags; each `hammer.gl` component owns a context and browsers
-cap live contexts at about 16 per page.
+cap live contexts at about 16 per page. Chromium evicts the oldest context
+when the cap is exceeded; the component stays blank until the browser
+restores it, which Chromium does only after another WebGL context has been
+garbage-collected — possibly much later. Keep live `hammer.gl` components
+well under the cap.
 
 ## Measured
 

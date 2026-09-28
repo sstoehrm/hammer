@@ -43,6 +43,12 @@
 
 (defn- cname [^State st] (.-cname ^cells/Comp (.-comp ^cells/Instance (.-inst st))))
 
+(defn component-name
+  "The component's name (as given to defdraw/defloop), for a backend's own
+  logging (e.g. hammer.gl's webglcontextlost warning)."
+  [^State st]
+  (cname st))
+
 (defn- request! []
   (when-not (.-pending clock)
     (set! (.-pending clock) true)

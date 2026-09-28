@@ -135,8 +135,9 @@ may be remounted, and the browser returns the same underlying context for the sa
 canvas, so releasing it would leave the next mount unable to recover.
 
 `hammer.gl`'s context-loss handling is backend-specific, built on this same runtime:
-on `webglcontextlost` it default-prevents the event (so the browser will restore the
-context), runs `draw/dispose!` (which runs `:dispose` and marks the state for a new
+on `webglcontextlost` it default-prevents the event (so the browser is allowed to
+restore it later), warns once (naming the component) via `draw/component-name`, runs
+`draw/dispose!` (which runs `:dispose` and marks the state for a new
 `:init`), and stops — `will-draw?` then returns false until the context comes back, so
 a `defdraw` sits still and a running `defloop`'s clock freezes on the next frame that
 can't draw. On `webglcontextrestored` it calls `draw/queue!`, which requests a frame;

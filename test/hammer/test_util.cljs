@@ -13,3 +13,12 @@
     (set! js/console.error (fn [& args] (swap! logs conj (vec args))))
     (try (f logs) (finally (set! js/console.error orig)))
     @logs))
+
+(defn capture-warnings
+  "Like capture-errors, but for js/console.warn."
+  [f]
+  (let [orig js/console.warn
+        logs (atom [])]
+    (set! js/console.warn (fn [& args] (swap! logs conj (vec args))))
+    (try (f logs) (finally (set! js/console.warn orig)))
+    @logs))
