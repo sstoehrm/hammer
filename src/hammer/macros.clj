@@ -2,7 +2,7 @@
   "Binding compilation shared by defc (hammer.core) and defdraw/defloop
   (hammer.canvas, hammer.gpu).")
 
-(def ^:private facades '#{hammer.core hammer.app hammer.canvas hammer.gpu})
+(def ^:private facades '#{hammer.core hammer.app hammer.canvas hammer.gpu hammer.gl})
 
 (defn deps-of
   "Indices of the slots named anywhere in form (metadata included)."
