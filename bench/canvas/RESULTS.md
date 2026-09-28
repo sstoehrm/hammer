@@ -119,16 +119,30 @@ defloop, 10000 moving rects, per-frame state in a watched atom + swap! (the patt
 | clear | 1x | vanilla | 30.60 | 32.40 | — | 0.69 | 0.87 | — | 2.56 | — |  |
 | clear | 1x | hammer | 27.40 | 31.80 | -3.20 (-10.5%) | 1.70 | 2.00 | +1.01 (+146.4%) | 3.64 | +1.08 (+42.3%) | ok |
 
-## gpu-points
+## gl-points (replaces gpu-points)
 
-hammer.gpu defdraw, 100000 points (point-list), uniform colour. WebGPU adapter: amd / rdna-3; flags: --enable-unsafe-webgpu --enable-features=Vulkan --use-angle=vulkan --use-vulkan=native. wall/script do not include GPU execution (submit is async). n=100000. All times in ms.
+`gpu-points` (`hammer.gpu`/WebGPU) was replaced by `gl-points` (`hammer.gl`/WebGL2):
+see `docs/superpowers/specs/2026-09-28-webgl2-backend-design.md` for why (WebGPU is
+not usable by default in Firefox or on Linux Chromium). The table below is a
+**single run** (`node bench/canvas/run.mjs --scenario gl-points`, default 3
+warm-ups + 20 measured iterations) — one invocation, not repeated to gauge
+run-to-run noise the way the note above does for the full suite — taken at commit
+8600a37 (`canvas/webgl2`), 2026-09-28, same machine as the header above (Radeon
+8060S). Headless Chromium used its software (SwiftShader) WebGL2 renderer rather
+than that GPU (headless Chromium falls back to software rendering by default,
+without `--use-angle=vulkan`/`--use-gl` flags), so absolute times are not
+comparable to a hardware run and are noted as such below; `preserveDrawingBuffer` is
+on for both variants (`readPixels` pixel-parity needs it), so absolute times include
+that copy's cost.
+
+hammer.gl defdraw, 100000 points (gl.POINTS), uniform colour; preserveDrawingBuffer is on in both variants (for readPixels parity), so absolute times include the preserved-buffer copy (SOFTWARE renderer). n=100000. All times in ms.
 
 | op | CPU throttle | variant | wall median | wall p95 | Δ wall vs vanilla | script median | script p95 | Δ script vs vanilla | task median | Δ task vs vanilla | pixel parity |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| create | 1x | vanilla | 29.70 | 30.10 | — | 4.96 | 5.78 | — | 5.75 | — | n/a |
-| create | 1x | hammer | 30.15 | 30.90 | +0.45 (+1.5%) | 4.53 | 6.64 | -0.43 (-8.6%) | 4.97 | -0.78 (-13.6%) | n/a |
-| update | 4x | vanilla | 26.05 | 27.10 | — | 0.28 | 0.71 | — | 1.50 | — | n/a |
-| update | 4x | hammer | 26.30 | 28.00 | +0.25 (+1.0%) | 0.89 | 1.40 | +0.61 (+218.5%) | 2.01 | +0.51 (+33.7%) | n/a |
-| clear | 1x | vanilla | 30.00 | 30.40 | — | 0.27 | 0.33 | — | 1.03 | — | n/a |
-| clear | 1x | hammer | 29.55 | 30.10 | -0.45 (-1.5%) | 0.42 | 0.82 | +0.15 (+56.5%) | 1.27 | +0.24 (+22.9%) | n/a |
+| create | 1x | vanilla | 40.55 | 42.90 | — | 4.51 | 5.13 | — | 32.55 | — |  |
+| create | 1x | hammer | 41.85 | 44.00 | +1.30 (+3.2%) | 4.59 | 6.07 | +0.08 (+1.8%) | 32.87 | +0.32 (+1.0%) | ok |
+| update | 4x | vanilla | 32.00 | 37.90 | — | 0.20 | 0.88 | — | 31.65 | — | |
+| update | 4x | hammer | 32.65 | 37.30 | +0.65 (+2.0%) | 1.26 | 1.71 | +1.06 (+524.2%) | 33.12 | +1.47 (+4.7%) | ok |
+| clear | 1x | vanilla | 18.40 | 24.20 | — | 0.09 | 0.15 | — | 2.54 | — | |
+| clear | 1x | hammer | 18.90 | 23.50 | +0.50 (+2.7%) | 0.27 | 0.33 | +0.17 (+186.6%) | 2.78 | +0.24 (+9.6%) | ok |
 

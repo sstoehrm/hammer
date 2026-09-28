@@ -1,5 +1,10 @@
 # hammer draw components: Canvas 2D and WebGPU (design)
 
+> **Superseded:** the WebGPU parts of this document (the `hammer.gpu` facade) are
+> replaced by `hammer.gl` (WebGL2); see `2026-09-28-webgl2-backend-design.md`. The
+> `hammer.canvas` parts and the shared `hammer.draw` runtime described here still
+> hold.
+
 Date: 2026-09-27 · Branch: `canvas/draw` (from `perf2/slim`) · Status: draft for review
 
 ## Goal

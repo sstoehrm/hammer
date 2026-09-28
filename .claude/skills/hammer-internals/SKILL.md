@@ -1,6 +1,6 @@
 ---
 name: hammer-internals
-description: Use when reading, modifying, debugging, or building apps with the hammer ClojureScript UI framework (src/hammer) — components re-rendering too often or not at all, defc binding kinds (path, atom, derived), event handlers and effects, render order, keyed lists, defdraw/defloop canvas or WebGPU draw components, or changing dom/cells/trie/scheduler/draw/canvas/gpu code.
+description: Use when reading, modifying, debugging, or building apps with the hammer ClojureScript UI framework (src/hammer) — components re-rendering too often or not at all, defc binding kinds (path, atom, derived), event handlers and effects, render order, keyed lists, defdraw/defloop canvas or WebGL2 draw components, or changing dom/cells/trie/scheduler/draw/canvas/gl code.
 ---
 
 # hammer internals
@@ -17,7 +17,7 @@ and an example are in `README.md`; this skill covers what only the source shows.
 | File | Responsibility |
 |---|---|
 | `core.clj` | `defc` macro: classifies bindings, computes deps by symbol name, compiles literal hiccup to templates |
-| `macros.clj` | binding compilation shared by `defc` and `defdraw`/`defloop`: `binding-spec`, `deps-of`, `is?-form?` (recognizes `is?` unqualified or qualified on any facade — `hammer.core`, `hammer.app`, `hammer.canvas`, `hammer.gpu` — or an alias of one), `draw-def` (shared expansion for `defdraw`/`defloop` in `canvas.clj`/`gpu.clj`) |
+| `macros.clj` | binding compilation shared by `defc` and `defdraw`/`defloop`: `binding-spec`, `deps-of`, `is?-form?` (recognizes `is?` unqualified or qualified on any facade — `hammer.core`, `hammer.app`, `hammer.canvas`, `hammer.gl` — or an alias of one), `draw-def` (shared expansion for `defdraw`/`defloop` in `canvas.clj`/`gl.clj`) |
 | `core.cljs` | DOM facade: re-exports `hammer.app`, `defc`, `mount!` (2-arity keeps db) |
 | `app.cljs` | shared event API used by every facade: `reg-event`, `reg-fx`, `dispatch`, `dispatch-sync`, `is?` |
 | `events.cljs` | handler/fx registry, microtask queue, `set-db!`, effect processing |
@@ -25,9 +25,9 @@ and an example are in `README.md`; this skill covers what only the source shows.
 | `cells.cljs` | `Instance` slots (`vals`, plus a `Cell` holding path/value/stale flag per path, `is?` or local slot): `create`, `set-props!`, `refresh!`, `render`, `destroy!`; `Comp`'s optional `Host` (`run`/`create`/`destroy`) lets `dom.cljs` delegate a component to a non-DOM renderer, and the single `sched/set-runner!` dispatches to it or to the default (`dom/update-inst!`); also the root registry (`unmount-root!`/`set-root!`/`unmount-roots!`, container el → unmount fn) shared by `dom/mount!` and `draw/mount!` |
 | `scheduler.cljs` | dirty set, one microtask flush, sorted by depth |
 | `dom.cljs` | hiccup → VNode, create/patch/unmount, attrs, keyed diff, roots, `:tpl` templates and holes; a `:comp` vnode whose component has a `Host` delegates create/patch/unmount to it instead of the normal DOM path (see Draw components) |
-| `draw.cljs` | shared draw runtime for `hammer.canvas`/`hammer.gpu`: the per-instance runner (`run-host!`), the rAF queue and shared frame loop (`frame!`), the canvas host (size/DPR sync, `ResizeObserver`, `:on-*` listeners, `:attrs`), `Backend`/`register-backend!`, and standalone `mount!` for a bare canvas |
+| `draw.cljs` | shared draw runtime for `hammer.canvas`/`hammer.gl`: the per-instance runner (`run-host!`), the rAF queue and shared frame loop (`frame!`), the canvas host (size/DPR sync, `ResizeObserver`, `:on-*` listeners, `:attrs`), `Backend`/`register-backend!`, and standalone `mount!` for a bare canvas |
 | `canvas.cljs` | Canvas 2D facade: re-exports `hammer.app` and `draw/mount!`, registers the `:canvas` backend (`getContext "2d"`, `setTransform` for DPR); `canvas.clj` has its thin `defdraw`/`defloop` macros (call `macros/draw-def`) |
-| `gpu.cljs` | WebGPU facade: one adapter/device per page, `:fallback`/`:on-unsupported` handling, device-loss recovery, `gpu/pass`; registers the `:gpu` backend; `gpu.clj` has its `defdraw`/`defloop` macros |
+| `gl.cljs` | WebGL2 facade: registers the `:gl` backend — one `WebGL2RenderingContext` per component (`getContext "webgl2" context-attrs`), viewport set before every draw, `:fallback`/`:on-unsupported` when unavailable (logged once per page), `webglcontextlost`/`webglcontextrestored` handling (`:dispose` / re-`:init` and redraw, loop clock freezes while lost), and releasing the context (`WEBGL_lose_context`) on unmount for a canvas hammer created (an adopted canvas keeps its context across remounts — see `State`'s `adopted?`); `gl.clj` has its `defdraw`/`defloop` macros |
 | `state.cljs` | `app-db` atom and root trie node |
 | `testing.cljs` | sync `flush!`, render counters, `reset-app!` |
 
@@ -75,7 +75,7 @@ keep plain data (a value reused twice must not be one DOM node).
 |---|---|---|---|
 | positional prop | `:prop` | — | parent passes a non-`=` arg |
 | vector literal `[:a id]` | `:path` | macro time | path's deps change (re-registers in the trie) or the trie marks it |
-| `(is? path v)` (whole init) | `:eq` | macro time, by symbol (`is?`, or qualified on any facade — `hammer.core`, `hammer.app`, `hammer.canvas`, `hammer.gpu` — or an alias of one) | path's or `v`'s deps change (re-registers) or the trie marks it; value is `(= (get-in db path) v)` |
+| `(is? path v)` (whole init) | `:eq` | macro time, by symbol (`is?`, or qualified on any facade — `hammer.core`, `hammer.app`, `hammer.canvas`, `hammer.gl` — or an alias of one) | path's or `v`'s deps change (re-registers) or the trie marks it; value is `(= (get-in db path) v)` |
 | evaluates to an `IWatchable` | `:local` | runtime, at `create` | never re-run; watch marks when the value is no longer `identical?` |
 | anything else | `:derived` | runtime, at `create` | a named dep (prop or earlier binding) changed |
 
@@ -83,7 +83,7 @@ Deps are the slot symbols that appear anywhere in the init form (by name, so a s
 `let` counts too). A derived binding never tracks `app-db` or `@global`. Read the db
 through a path binding; bind a global atom itself (`g some-atom`) to get a watched `:local`.
 
-`defdraw`/`defloop` (`hammer.canvas`, `hammer.gpu`) share this same binding compilation
+`defdraw`/`defloop` (`hammer.canvas`, `hammer.gl`) share this same binding compilation
 (`hammer.macros`), so the same table applies to their `props`/`bindings`.
 
 ## Draw components
@@ -113,18 +113,34 @@ Draw components **only draw in `frame!`**: one shared `requestAnimationFrame` lo
 that, each frame, calls `draw!` on every queued or running instance once, in mount
 order (`State.order`, an increasing sequence number), before the browser paints. A
 running `defloop`'s clock (`:t`/`:dt`/`:n`, `advance!`) moves only on frames where it
-actually draws: while it can't (zero size, no draw arg yet — e.g. the GPU device is
-pending — no draw fn, or a failed `:init`), `:t` and `:n` stand still and `State.last`
-is reset, so the next drawn frame gets `:dt` 0. A failed opts/draw-fn re-evaluation
-(`broken`) does *not* stop a running loop: `will-draw?` lets it keep drawing with the
-previous opts/f, clock included — only a `defdraw` or a non-running `defloop` actually
-stands still on that failure.
+actually draws: while it can't (zero size, no draw arg yet — e.g. `hammer.gl`'s
+WebGL2 context is lost — no draw fn, or a failed `:init`), `:t` and `:n` stand still
+and `State.last` is reset, so the next drawn frame gets `:dt` 0. A failed opts/draw-fn
+re-evaluation (`broken`) does *not* stop a running loop: `will-draw?` lets it keep
+drawing with the previous opts/f, clock included — only a `defdraw` or a non-running
+`defloop` actually stands still on that failure.
 
 State (the canvas element, DPR, size, listeners, the current opts/draw fn, `:init`
 result, loop timing) is kept in `hammer.draw/State`, held in **the instance's `vnode`
 field** — `defc` uses that same field for its DOM vnode, so a draw `Comp`'s host just
 repurposes it for a different kind of per-instance state, with no new slot on
-`cells/Instance`.
+`cells/Instance`. `State.ext` is a slot a backend may use for its own per-instance
+extension state — `hammer.gl` keeps its DOM wrap span, a `lost` flag and its
+`webglcontextlost`/`webglcontextrestored` listeners there. `State.broken`/`adopted?`
+are documented in `draw.cljs` above the `State` deftype: `adopted?` is true when the
+canvas came from `mount!` on an existing `<canvas>` (not one hammer created), and a
+backend's `teardown!` should release backend resources tied to the canvas (e.g.
+`hammer.gl`'s `WEBGL_lose_context`) only when `adopted?` is false — an adopted canvas
+may be remounted, and the browser returns the same underlying context for the same
+canvas, so releasing it would leave the next mount unable to recover.
+
+`hammer.gl`'s context-loss handling is backend-specific, built on this same runtime:
+on `webglcontextlost` it default-prevents the event (so the browser will restore the
+context), runs `draw/dispose!` (which runs `:dispose` and marks the state for a new
+`:init`), and stops — `will-draw?` then returns false until the context comes back, so
+a `defdraw` sits still and a running `defloop`'s clock freezes on the next frame that
+can't draw. On `webglcontextrestored` it calls `draw/queue!`, which requests a frame;
+`:init` runs again there since `draw!` sees `inited` still `false`.
 
 ## Gotchas
 

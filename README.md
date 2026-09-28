@@ -59,7 +59,7 @@ instances whose result flips, e.g. the old and the new selected row:
 ```
 
 `defc` recognizes it by symbol: unqualified `is?`, or a qualified `is?` on any
-hammer facade (`hammer.core`, `hammer.app`, `hammer.canvas`, `hammer.gpu`) or
+hammer facade (`hammer.core`, `hammer.app`, `hammer.canvas`, `hammer.gl`) or
 an alias of one. Anywhere else, e.g. nested inside another expression, calling
 `is?` throws.
 
@@ -81,14 +81,14 @@ running app already has, instead of resetting it.
 - `(use-fake-frames!)` — replaces `requestAnimationFrame` so `defdraw`/`defloop`
   components draw only when the test calls `frame!`, never on a real animation
   frame; add it to the same `:before` fixture as `reset-app!` in any test that
-  touches `hammer.canvas`/`hammer.gpu`.
+  touches `hammer.canvas`/`hammer.gl`.
 - `(frame! ms)` — `flush!` plus one draw frame at time `ms`: drains events,
   renders, then draws every queued or running `defdraw`/`defloop` instance
   once, as `requestAnimationFrame` would at time `ms`.
 
-## Canvas and WebGPU
+## Canvas and WebGL2
 
-`hammer.canvas` (Canvas 2D) and `hammer.gpu` (WebGPU) add two more component
+`hammer.canvas` (Canvas 2D) and `hammer.gl` (WebGL2) add two more component
 macros, on top of the same reactivity as `defc`: `defdraw` redraws (at the next
 animation frame) when a binding its opts or draw-fn name changes; `defloop` is
 the same but also redraws every animation frame while mounted and `:run?` is
@@ -134,11 +134,12 @@ fn just mutates it directly, same as an atom would, without the watch.
 | `:size` | all | `[w h]` in CSS pixels. Absent: the canvas fills its CSS box and follows it (`ResizeObserver`) — give the container a CSS height, or the box is 0px tall and the canvas never draws. |
 | `:run?` | `defloop` | Loop runs while truthy. Default `true`. While paused, it still redraws on binding changes (with `:dt 0`). |
 | `:max-dt` | `defloop` | Cap for `:dt` in ms. Default `100`. |
-| `:init` | all | `(fn [ctx-or-gpu info] res)`, run once before the first draw (GPU: after the device is ready; again after device loss). |
-| `:dispose` | all | `(fn [res])`, run on unmount (and before re-init after device loss). |
+| `:init` | all | `(fn [ctx-or-gl info] res)`, run once before the first draw (`hammer.gl`: again after `webglcontextrestored`). |
+| `:dispose` | all | `(fn [res])`, run on unmount (`hammer.gl`: also on `webglcontextlost`, before re-init on restore). |
+| `:context-attrs` | `hammer.gl` | Map passed to `getContext("webgl2", attrs)`, e.g. `{:antialias false :alpha false}`. Read once at setup, since context attributes are fixed at creation. |
 | `:on-*` | all | Canvas DOM events, e.g. `:on-click`, `:on-pointermove`. A fn gets `(e {:x :y})` in canvas-local CSS pixels; an event vector is dispatched with `x y` appended, e.g. `[:pick]` → `[:pick 120 48]`. |
-| `:fallback` | `hammer.gpu` | Hiccup rendered instead of the canvas when WebGPU is unavailable (DOM embedding only). **Static: plain hiccup only** — no components, no `:on-*` handlers, no `:ref`. It is rendered once through the DOM renderer's internal host-render and is never mounted or unmounted as a component tree, so nothing in it is reactive. |
-| `:on-unsupported` | `hammer.gpu` | `(fn [reason])` called when WebGPU is unavailable. |
+| `:fallback` | `hammer.gl` | Hiccup rendered instead of the canvas when WebGL2 is unavailable (DOM embedding only). **Static: plain hiccup only** — no components, no `:on-*` handlers, no `:ref`. It is rendered once through the DOM renderer's internal host-render and is never mounted or unmounted as a component tree, so nothing in it is reactive. |
+| `:on-unsupported` | `hammer.gl` | `(fn [reason])` called when WebGL2 is unavailable. |
 | `:attrs` | all | Extra attributes for the `<canvas>` element (`:class`, `:style`, `:aria-label`, …). |
 
 The draw fn's arguments:
@@ -146,9 +147,10 @@ The draw fn's arguments:
 - `hammer.canvas`: `(fn [ctx info])`, or `(fn [ctx info res])` when `:init` is
   given. `ctx` is the `CanvasRenderingContext2D`, already scaled by
   `devicePixelRatio` so you draw in CSS pixels; hammer never clears it.
-- `hammer.gpu`: `(fn [gpu info])`, or `(fn [gpu info res])` with `:init`.
-  `gpu` is `{:device :queue :context :format :view}`; `gpu/pass` runs one
-  render pass with a clear load op: `(gpu/pass gpu {:clear [r g b a]} (fn [pass] ...))`.
+- `hammer.gl`: `(fn [gl info])`, or `(fn [gl info res])` with `:init`. `gl` is
+  the raw `WebGL2RenderingContext`; hammer calls `gl.viewport(0, 0,
+  drawingBufferWidth, drawingBufferHeight)` before each draw (the counterpart
+  of Canvas 2D's DPR scaling) and never clears it.
 - `info` is `{:w :h :dpr}` in CSS pixels; for `defloop` it also has `{:t :dt :n}`:
   elapsed time in ms since the loop started, the capped delta since the last
   frame, and a frame counter.
@@ -157,31 +159,28 @@ The draw fn's arguments:
 **Mounting:** a draw component used inside `defc` hiccup (`[chart]`, keys work
 as usual) renders its own `<canvas>` in place. To mount one standalone on a
 canvas, without `hammer.core`/`hammer.dom` in the bundle, use
-`hammer.canvas/mount!` or `hammer.gpu/mount!` — same shape as `hammer.core/mount!`,
+`hammer.canvas/mount!` or `hammer.gl/mount!` — same shape as `hammer.core/mount!`,
 taking `(hiccup el)` or `(hiccup el db)`; `el` is an existing `<canvas>`
 (adopted as-is) or a container (a canvas is created inside it). All three
 `mount!`s share one root registry: mounting any of them on an element first
 unmounts whatever another one mounted there.
 
 `bb sizes` builds the three size-check bundles (`hammer.core`-only,
-`hammer.canvas`-only, `hammer.gpu`-only), prints each one's raw and gzip size,
+`hammer.canvas`-only, `hammer.gl`-only), prints each one's raw and gzip size,
 and checks each build's shadow `manifest.edn` `:sources` for the other
-variants' namespaces (dom bundle must not carry `hammer.draw`/`hammer.canvas`/`hammer.gpu`,
+variants' namespaces (dom bundle must not carry `hammer.draw`/`hammer.canvas`/`hammer.gl`,
 and so on), failing with exit 1 if one leaks in.
 
-3D (meshes, cameras, materials, a scene graph on top of `hammer.gpu`) is a TODO,
+3D (meshes, cameras, materials, a scene graph on top of `hammer.gl`) is a TODO,
 not part of this API.
 
 See `examples/canvas` (a scatter chart with click-to-select, plus bouncing
-balls with a pause button) and `examples/gpu` (a WebGPU colour swatch and a
-pulsing loop, with a fallback message when WebGPU is unavailable).
+balls with a pause button) and `examples/gl` (a WebGL2 colour swatch and a
+pulsing loop, plus a shader-drawn triangle, with a fallback message when
+WebGL2 is unavailable).
 
-On Linux, Chromium may expose `navigator.gpu` but return no adapter while
-Vulkan is disabled (`chrome://gpu` shows "Vulkan: Disabled"); hammer then logs
-`hammer: WebGPU unavailable: no WebGPU adapter` and renders `:fallback`. Start
-Chromium with `--enable-unsafe-webgpu --enable-features=Vulkan` (or enable
-`chrome://flags/#enable-vulkan`) to get a hardware adapter. Firefox has WebGPU
-off by default (`navigator.gpu is missing`).
+WebGL2 needs no flags; each `hammer.gl` component owns a context and browsers
+cap live contexts at about 16 per page.
 
 ## Measured
 
@@ -196,7 +195,7 @@ off by default (`navigator.gpu is missing`).
 `npm install`, `npm test`, `npx shadow-cljs watch todomvc` → http://localhost:8280
 
 `npx shadow-cljs watch canvas-demo` → http://localhost:8290, `npx shadow-cljs watch
-gpu-demo` → http://localhost:8291 (`examples/canvas`, `examples/gpu`).
+gl-demo` → http://localhost:8291 (`examples/canvas`, `examples/gl`).
 
 Without shadow-cljs: `examples/counter` uses `deps.edn` and figwheel-main, with hammer
 as a `:local/root` dep (`cd examples/counter && clj -M:dev` → http://localhost:9500).
