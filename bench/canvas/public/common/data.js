@@ -31,7 +31,7 @@
   const RECTS = { W: 1300, H: 1400, HL: '#000000' };
   const LOOP = { W: 1300, H: 800, SIZE: 3, COLOR: '#e8590c' };
   const MANY = { S: 20, HL: '#e03131', UPD: '#000000' };
-  const GPU = { W: 1024, H: 768 };
+  const GL = { W: 1024, H: 768 };
 
   function pick(r, xs) { return xs[(r() * xs.length) | 0]; }
 
@@ -75,28 +75,36 @@
   }
 
   // n points in clip space, interleaved x,y
-  function gpuPoints(n, seed) {
+  function glPoints(n, seed) {
     const r = mulberry32(seed);
     const a = new Float32Array(n * 2);
     for (let i = 0; i < a.length; i++) a[i] = r() * 2 - 1;
     return a;
   }
 
-  // RGBA colour for gpu update k (always differs from k-1)
-  function gpuColor(k) {
+  // RGBA colour for gl-points update k (always differs from k-1)
+  function glColor(k) {
     return new Float32Array([((k * 37) % 100) / 100, 0.6, ((k * 11) % 100) / 100, 1]);
   }
 
   // Index of the row to select at iteration k (consecutive k never repeat)
   function selectIndex(k, n) { return (((k * 37) % n) + n) % n; }
 
-  const GPU_SHADER = `
-struct U { color: vec4f };
-@group(0) @binding(0) var<uniform> u: U;
-@vertex fn vs(@location(0) p: vec2f) -> @builtin(position) vec4f { return vec4f(p, 0.0, 1.0); }
-@fragment fn fs() -> @location(0) vec4f { return u.color; }
+  // GLSL ES 3.00: point-cloud shader shared by hammer.gl and vanilla gl.js
+  const GL_VS = `#version 300 es
+layout(location=0) in vec2 pos;
+void main() {
+  gl_Position = vec4(pos, 0.0, 1.0);
+  gl_PointSize = 1.0;
+}
+`;
+  const GL_FS = `#version 300 es
+precision mediump float;
+uniform vec4 u_color;
+out vec4 outColor;
+void main() { outColor = u_color; }
 `;
 
-  window.BenchData = { mulberry32, tableRows, rects, particles, cellColors, gpuPoints, gpuColor, selectIndex,
-    PALETTE, SEED, TABLE, RECTS, LOOP, MANY, GPU, GPU_SHADER };
+  window.BenchData = { mulberry32, tableRows, rects, particles, cellColors, glPoints, glColor, selectIndex,
+    PALETTE, SEED, TABLE, RECTS, LOOP, MANY, GL, GL_VS, GL_FS };
 })();

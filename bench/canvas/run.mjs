@@ -4,7 +4,7 @@
 //   node bench/canvas/run.mjs [--scenario a,b] [--iterations N] [--variants hammer,vanilla]
 //                             [--warmups N] [--window-ms MS] [--throttle X] [--dpr D]
 //
-// Needs the release builds (npx shadow-cljs release bench-canvas bench-dom bench-gpu,
+// Needs the release builds (npx shadow-cljs release bench-canvas bench-dom bench-gl,
 // or `bb bench-canvas`, which builds and then runs this). Markdown goes to stdout,
 // progress to stderr. Exit 1 on a pixel-parity mismatch or a page error.
 
@@ -74,9 +74,9 @@ const SCENARIOS = [
   { name: 'many-canvases-1k', kind: 'ops', build: 'bench-dom', vanilla: 'many.js', app: 'many', n: 1000,
     ops: ['create', 'update', 'select', 'clear'], pixels: true,
     desc: '1000 20x20 defdraw cells in a keyed hammer.core list (colour from [:colors id], highlight from (is? [:sel] id)); vanilla: 1000 hand-managed <canvas>' },
-  { name: 'gpu-points', kind: 'ops', build: 'bench-gpu', vanilla: 'gpu.js', app: 'gpu', n: 100000,
-    ops: ['create', 'update', 'clear'], pixels: false, gpu: true,
-    desc: 'hammer.gpu defdraw, 100000 points (point-list), uniform colour' },
+  { name: 'gl-points', kind: 'ops', build: 'bench-gl', vanilla: 'gl.js', app: 'gl', n: 100000,
+    ops: ['create', 'update', 'clear'], pixels: true, gl: true,
+    desc: 'hammer.gl defdraw, 100000 points (gl.POINTS), uniform colour' },
 ];
 
 // once: run (unmeasured, unthrottled) before throttling; each: run (unmeasured) before every iteration
@@ -88,7 +88,6 @@ function opPlan(op, throttle) {
   }
 }
 
-const GPU_ARGS = ['--enable-unsafe-webgpu', '--enable-features=Vulkan', '--use-angle=vulkan', '--use-vulkan=native'];
 const BASE_ARGS = ['--js-flags=--expose-gc', '--disable-renderer-backgrounding', '--disable-background-timer-throttling',
   '--disable-backgrounding-occluded-windows', '--no-first-run', '--disable-extensions', '--hide-scrollbars'];
 const VIEWPORT = { width: 1400, height: 1500 };
@@ -144,17 +143,35 @@ const MEASURE = (op, k) => new Promise(resolve => {
 
 const GC = () => { if (window.gc) window.gc(); };
 
-// FNV-1a over every 2D canvas's backing store, in document order
+// FNV-1a over every canvas's backing store (2D via getImageData, WebGL2 via
+// readPixels), in document order.
 const PIXEL_HASH = () => {
   let h = 0x811c9dc5, count = 0;
   for (const c of document.querySelectorAll('canvas')) {
-    const ctx = c.getContext('2d');
-    if (!ctx) return null;
-    count++;
-    h = Math.imul(h ^ c.width, 16777619); h = Math.imul(h ^ c.height, 16777619);
-    if (!c.width || !c.height) continue;
-    const d = new Uint32Array(ctx.getImageData(0, 0, c.width, c.height).data.buffer);
-    for (let i = 0; i < d.length; i++) h = Math.imul(h ^ d[i], 16777619);
+    const ctx2d = c.getContext('2d');
+    if (ctx2d) {
+      count++;
+      h = Math.imul(h ^ c.width, 16777619); h = Math.imul(h ^ c.height, 16777619);
+      if (c.width && c.height) {
+        const d = new Uint32Array(ctx2d.getImageData(0, 0, c.width, c.height).data.buffer);
+        for (let i = 0; i < d.length; i++) h = Math.imul(h ^ d[i], 16777619);
+      }
+      continue;
+    }
+    const gl = c.getContext('webgl2');
+    if (gl) {
+      count++;
+      const w = gl.drawingBufferWidth, gh = gl.drawingBufferHeight;
+      h = Math.imul(h ^ w, 16777619); h = Math.imul(h ^ gh, 16777619);
+      if (w && gh) {
+        const buf = new Uint8Array(w * gh * 4);
+        gl.readPixels(0, 0, w, gh, gl.RGBA, gl.UNSIGNED_BYTE, buf);
+        const d = new Uint32Array(buf.buffer);
+        for (let i = 0; i < d.length; i++) h = Math.imul(h ^ d[i], 16777619);
+      }
+      continue;
+    }
+    return null;
   }
   return `${count}:${(h >>> 0).toString(16)}`;
 };
@@ -338,19 +355,13 @@ async function scenarioLoop(browser, base, sc, opts, out, idx) {
   return errs.length > 0;
 }
 
-async function gpuAdapter(browser, base) {
+async function glSupported(browser, base) {
   const context = await browser.createBrowserContext();
   const page = await context.newPage();
   await page.goto(`${base}/`);
-  const info = await page.evaluate(async () => {
-    if (!navigator.gpu) return null;
-    const a = await navigator.gpu.requestAdapter();
-    if (!a) return null;
-    const i = a.info || {};
-    return `${i.vendor || '?'} / ${i.architecture || '?'}${i.description ? ' / ' + i.description : ''}`;
-  });
+  const ok = await page.evaluate(() => !!document.createElement('canvas').getContext('webgl2'));
   await context.close();
-  return info;
+  return ok;
 }
 
 async function canvasRenderer(browser, base) {
@@ -358,8 +369,8 @@ async function canvasRenderer(browser, base) {
   const page = await context.newPage();
   await page.goto(`${base}/`);
   const r = await page.evaluate(() => {
-    const gl = document.createElement('canvas').getContext('webgl');
-    if (!gl) return 'no WebGL';
+    const gl = document.createElement('canvas').getContext('webgl2');
+    if (!gl) return 'no WebGL2';
     const e = gl.getExtension('WEBGL_debug_renderer_info');
     return e ? gl.getParameter(e.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER);
   });
@@ -376,7 +387,7 @@ async function main() {
     : SCENARIOS;
   for (const b of new Set(chosen.map(s => s.build))) {
     if (opts.variants.includes('hammer') && !fs.existsSync(path.join(OUT, b, 'main.js'))) {
-      throw new Error(`missing target/bench/${b}/main.js — run \`npx shadow-cljs release bench-canvas bench-dom bench-gpu\` (or \`bb bench-canvas\`)`);
+      throw new Error(`missing target/bench/${b}/main.js — run \`npx shadow-cljs release bench-canvas bench-dom bench-gl\` (or \`bb bench-canvas\`)`);
     }
   }
   if (!fs.existsSync(CHROME)) throw new Error(`Chromium not found at ${CHROME} (set CHROME)`);
@@ -388,8 +399,6 @@ async function main() {
 
   const out = [];
   let failed = false;
-  const canvasSc = chosen.filter(s => !s.gpu);
-  const gpuSc = chosen.filter(s => s.gpu);
 
   const browser = await launch([]);
   const version = await browser.version();
@@ -407,13 +416,18 @@ async function main() {
     `- wall = trigger (page.evaluate → its own setTimeout(0) task → bench.run) until rAF → rAF → setTimeout(0), same for both variants. Frame-paced (60 Hz, ~16.7 ms frames): it depends on where in the frame the trigger lands, so ops that fit in one frame read 1-2 frames for both variants; compare script/task for those`,
     `- script / task = CDP Performance.getMetrics ScriptDuration / TaskDuration delta around each measured trigger (main-thread time, not quantized)`,
     `- Loops: consecutive rAF timestamp deltas over a ${opts.windowMs} ms window; script/task per frame = metric delta over the window / frames drawn`,
-    `- pixel parity: FNV hash of every 2D canvas's backing store after the last iteration, hammer vs vanilla`,
+    `- pixel parity: FNV hash of every canvas's backing store after the last iteration (2D via getImageData, WebGL2 via readPixels), hammer vs vanilla`,
     '',
   ];
 
   try {
-    for (const [idx, sc] of canvasSc.entries()) {
+    let glOk = null;
+    for (const [idx, sc] of chosen.entries()) {
       log(`scenario ${sc.name}`);
+      if (sc.gl) {
+        if (glOk === null) glOk = await glSupported(browser, base);
+        if (!glOk) { out.push(`## ${sc.name}\n\nskipped (no WebGL2 context)\n`); continue; }
+      }
       const bad = sc.kind === 'loop'
         ? await scenarioLoop(browser, base, sc, opts, out, idx)
         : await scenarioOps(browser, base, sc, opts, out);
@@ -421,23 +435,6 @@ async function main() {
     }
   } finally {
     await browser.close();
-  }
-
-  for (const sc of gpuSc) {
-    log(`scenario ${sc.name}`);
-    const gb = await launch(GPU_ARGS);
-    try {
-      const adapter = await gpuAdapter(gb, base);
-      if (!adapter) {
-        out.push(`## ${sc.name}\n\nskipped (no WebGPU adapter; flags: ${GPU_ARGS.join(' ')})\n`);
-        continue;
-      }
-      sc.desc += `. WebGPU adapter: ${adapter}${/swiftshader/i.test(adapter) ? ' (SOFTWARE)' : ''}; flags: ${GPU_ARGS.join(' ')}. ` +
-        'wall/script do not include GPU execution (submit is async)';
-      failed = (await scenarioOps(gb, base, sc, opts, out)) || failed;
-    } finally {
-      await gb.close();
-    }
   }
 
   srv.close();

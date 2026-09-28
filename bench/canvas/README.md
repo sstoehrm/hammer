@@ -1,7 +1,7 @@
 # Canvas benchmark
 
-Measures hammer's own overhead for Canvas 2D / WebGPU drawing: every scenario
-has a hammer variant (`hammer.canvas` / `hammer.gpu`) and a hand-written
+Measures hammer's own overhead for Canvas 2D / WebGL2 drawing: every scenario
+has a hammer variant (`hammer.canvas` / `hammer.gl`) and a hand-written
 vanilla JS variant that issues the same drawing calls in the same order.
 The delta between the two is hammer: events, the path trie, the scheduler,
 `draw.cljs`'s frame loop and host, and reading the db's persistent data.
@@ -14,9 +14,9 @@ bb bench-canvas --scenario table-1k --iterations 3
 node bench/canvas/run.mjs --scenario loop-10k,loop-atom-10k   # after a build
 ```
 
-`bb bench-canvas` release-builds `bench-canvas`, `bench-dom` and `bench-gpu`
+`bb bench-canvas` release-builds `bench-canvas`, `bench-dom` and `bench-gl`
 (shadow-cljs.edn, output in `target/bench/`), fails if `bench-canvas` or
-`bench-gpu` contains `hammer.core`/`hammer.dom` (or the other backend), and
+`bench-gl` contains `hammer.core`/`hammer.dom` (or the other backend), and
 then runs `run.mjs` with the arguments passed through.
 
 | Option | Default | |
@@ -45,7 +45,7 @@ The load average in the header matters: run on an otherwise idle machine.
 | `loop-1k` / `loop-10k` / `loop-100k` | `defloop`, N moving 3x3 rects, state in `(volatile! …)` | frame time + script time per frame over 5 s |
 | `loop-atom-10k` | same as `loop-10k` but state in `(atom …)` + `swap!` (the pattern the README warns against) | same; vanilla is identical to `loop-10k`'s |
 | `many-canvases-1k` | 1000 20x20 `defdraw` cells in a keyed `hammer.core` `defc` list; colour from `[:colors id]` (a map keyed by id, hammer's trie fast path), highlight from `(is? [:sel] id)` | create, update one cell's colour, select one cell, clear |
-| `gpu-points` | `hammer.gpu` `defdraw`, 100000 points (`point-list`), colour uniform | create, update colour, clear. Skipped (`skipped (no WebGPU adapter)`) without an adapter |
+| `gl-points` | `hammer.gl` `defdraw`, 100000 points (`gl.POINTS`), colour uniform | create, update colour, clear. Skipped (`skipped (no WebGL2 context)`) without one |
 
 All data comes from `public/common/data.js` (seeded mulberry32, js-framework-benchmark
 word lists), loaded by both variants; layout constants live there too. No
@@ -54,11 +54,11 @@ runtime randomness. `create` builds its data inside the op in both variants
 is part of what is measured).
 
 Only `many-canvases-1k` uses `hammer.core`; everything else is built from
-`hammer.canvas` or `hammer.gpu` alone.
+`hammer.canvas` or `hammer.gl` alone.
 
 ## Measurement
 
-**Ops** (table, rects, many-canvases, gpu). Fresh browser context (page) per
+**Ops** (table, rects, many-canvases, gl-points). Fresh browser context (page) per
 op and variant; which variant runs first alternates per op (per scenario for
 loops). `create` and `clear` run the opposite op (unmeasured) before
 each iteration; `update`/`select`/`swap` run one `create` first, unthrottled.
@@ -90,10 +90,10 @@ median and p95, delta vs vanilla.
   select and swap; none for create, clear and loops. Printed per row.
 - `select` targets a different row every iteration (`k` is passed through),
   so hammer's `=` check never skips a draw that vanilla does.
-- **pixel parity**: after the last iteration, an FNV hash of every 2D
-  canvas's backing store, hammer vs vanilla. `MISMATCH` means the two
-  variants do not draw the same thing (not applicable to loops, whose
-  positions depend on frame timing, or to WebGPU canvases).
+- **pixel parity**: after the last iteration, an FNV hash of every canvas's
+  backing store (2D via `getImageData`, WebGL2 via `readPixels`), hammer vs
+  vanilla. `MISMATCH` means the two variants do not draw the same thing (not
+  applicable to loops, whose positions depend on frame timing).
 
 **Loops**. Fresh page, 1 s warm-up, then a 5 s window: consecutive rAF
 timestamp deltas (mean and p95), frames drawn, script and task time per frame
@@ -120,9 +120,12 @@ The vanilla files in `public/vanilla/` mirror what `hammer.draw` + the
    `:max-dt` default); the same typed-array state and step function, which
    returns a fresh wrapper each frame in both variants (so the atom variant's
    watch really fires). many-canvases: only affected canvases redraw, in
-   mount order. WebGPU: same pipeline and buffers, `getCurrentTexture` view,
-   vertex upload only when the points changed, uniform upload and one clear
-   pass per draw.
+   mount order. gl-points: same program and buffer, `preserveDrawingBuffer:
+   true` on both (so the pixel-parity `readPixels` after the last iteration
+   sees the drawn frame, not a browser-cleared one), viewport set before
+   every draw (hammer's counterpart of `setTransform`), vertex upload
+   (`bufferSubData`) only when the points changed, uniform upload and one
+   clear + `drawArrays(POINTS)` per draw.
 
 hammer-side code is written tight (`dotimes`/`nth`, `identical?` for id
 compares, typed arrays for loop state) so the delta is framework overhead
@@ -139,4 +142,4 @@ number.
 | `public/page.html` | one page for all variants: loads `common/data.js`, then `?src=` |
 | `public/common/data.js` | seeded data + layout constants shared by both variants |
 | `public/vanilla/*.js` | vanilla baselines (plain JS, no build) |
-| `src/bench_canvas/*.cljs` | hammer variants: `main` (bench-canvas build: table, rects, loops), `many` (bench-dom), `gpu` (bench-gpu) |
+| `src/bench_canvas/*.cljs` | hammer variants: `main` (bench-canvas build: table, rects, loops), `many` (bench-dom), `gl` (bench-gl) |

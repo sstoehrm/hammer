@@ -272,7 +272,7 @@
     (let [c (.-firstChild host)
           st (first (filter #(identical? c (.-canvas %)) (draw/states :canvas)))]
       (is (zero? (.-size (.-listeners st)))
-          ":on-unsupported is gpu-only bookkeeping, not a DOM event to listen for"))))
+          ":on-unsupported is gl-only bookkeeping, not a DOM event to listen for"))))
 
 (deftest null-2d-context-is-logged-once
   (reset! state/app-db {})
