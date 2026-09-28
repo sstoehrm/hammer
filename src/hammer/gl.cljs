@@ -3,7 +3,9 @@
   owns a WebGL2 context on its canvas. Without WebGL2: :fallback /
   :on-unsupported (logged once per page). On webglcontextlost: :dispose and
   no drawing; on webglcontextrestored: :init again and redraw. Unmount
-  releases the context (WEBGL_lose_context)."
+  releases the context (WEBGL_lose_context) for a canvas hammer created; an
+  adopted canvas (passed to mount!) keeps its context, since browsers return
+  the same one on a later remount."
   (:require-macros [hammer.gl])
   (:require [hammer.app :as app]
             [hammer.draw :as draw]))
@@ -65,7 +67,13 @@
           (set! (.-onrestored ext) on-restored)
           (.addEventListener c "webglcontextlost" on-lost)
           (.addEventListener c "webglcontextrestored" on-restored)
-          (set! (.-ctx st) g)))
+          (set! (.-ctx st) g)
+          ;; an adopted canvas keeps its underlying context across remounts;
+          ;; if it was already lost (e.g. a previous mount released it, or the
+          ;; loss happened before this mount ever attached listeners), the
+          ;; browser will not re-fire webglcontextlost for us -- start lost
+          ;; and wait for webglcontextrestored like the running case does.
+          (when (.isContextLost g) (set! (.-lost ext) true))))
       (or wrap c)))
   (fn [^draw/State st]
     (let [^js g (.-ctx st)]
@@ -81,6 +89,10 @@
       (when-let [f (some-> ext .-onlost)]
         (.removeEventListener c "webglcontextlost" f)
         (.removeEventListener c "webglcontextrestored" (.-onrestored ext)))
-      (when g
+      ;; only release a context hammer created the canvas for: an adopted
+      ;; canvas may be remounted, and getContext returns the same context for
+      ;; the same canvas, so losing it here would leave the next mount with a
+      ;; context that never recovers.
+      (when (and g (not (.-adopted? st)))
         (some-> (.getExtension g "WEBGL_lose_context") (.loseContext)))
       (set! (.-ctx st) nil)))))

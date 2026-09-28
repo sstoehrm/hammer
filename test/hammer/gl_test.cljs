@@ -74,16 +74,49 @@
     (t/frame! 48)
     (is (= [[:dispose :prog] [:init] [:draw :prog 2]] @res-log))))
 
-(deftest unmount-releases-the-context
+(deftest unmount-releases-a-hammer-created-canvas
   (reset! state/app-db {:n 1})
+  (let [host (js/document.createElement "div")]
+    (gl/mount! [tri "u"] host)
+    (t/frame! 16)
+    (let [^js c (.querySelector host "canvas")]
+      (t/reset-app!)
+      (is (some #(= [:loseContext "u"] %) @fgl/log))
+      (is (not (.-defaultPrevented (fire! c "webglcontextlost"))) "listeners removed"))))
+
+(deftest remount-on-an-adopted-canvas-keeps-drawing
+  (reset! state/app-db {:n 1})
+  (reset! res-log [])
   (let [c (js/document.createElement "canvas")]
-    (gl/mount! [tri "u"] c)
+    (gl/mount! [tri "r"] c)
     (t/frame! 16)
     (t/reset-app!)
-    (is (some #(= [:loseContext "u"] %) @fgl/log))
+    (reset! state/app-db {:n 1})
     (reset! res-log [])
-    (fire! c "webglcontextlost")
-    (is (empty? @res-log) "listeners removed")))
+    (gl/mount! [tri "r"] c)
+    (t/frame! 32)
+    (is (not-any? #(= [:loseContext "r"] %) @fgl/log) "an adopted canvas's context is not released on remount")
+    (is (= [[:init] [:draw :prog 1]] @res-log) "the remounted instance still draws")))
+
+(deftest setup-on-an-already-lost-context-waits-for-restore
+  (reset! state/app-db {:n 1})
+  (reset! res-log [])
+  (let [c (js/document.createElement "canvas")]
+    (gl/mount! [tri "lost"] c)
+    (t/frame! 16)
+    ;; the underlying context is lost directly (as a real driver loss would
+    ;; leave it), without going through webglcontextlost -- simulating a loss
+    ;; that happened, or finished, before a later mount's listeners exist.
+    (.loseContext (.getExtension (.getContext c "webgl2") "WEBGL_lose_context"))
+    (t/reset-app!)
+    (reset! state/app-db {:n 1})
+    (reset! res-log [])
+    (gl/mount! [tri "lost"] c)
+    (t/frame! 32)
+    (is (= [] @res-log) "an already-lost context at setup: no init, no draw")
+    (fire! c "webglcontextrestored")
+    (t/frame! 48)
+    (is (= [[:init] [:draw :prog 1]] @res-log))))
 
 (def frames (atom []))
 

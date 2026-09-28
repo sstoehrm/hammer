@@ -20,7 +20,12 @@
 ;; defloop) doesn't draw until a render succeeds. A running defloop ignores
 ;; broken and keeps animating with the previous opts/f -- "a loop keeps
 ;; running" -- so its clock keeps advancing too.
-(deftype State [inst backend kind loop? canvas order
+;; adopted?: canvas was passed to mount! (an existing <canvas> element), not
+;; created by hammer. A backend should release resources tied to a canvas
+;; (e.g. gl's WEBGL_lose_context) only when hammer created it -- an adopted
+;; canvas may be remounted, and browsers return the same underlying context
+;; for the same canvas, so releasing it would break the next mount.
+(deftype State [inst backend kind loop? canvas order adopted?
                 ^:mutable opts ^:mutable f ^:mutable broken ^:mutable ctx ^:mutable res ^:mutable inited
                 ^:mutable w ^:mutable h ^:mutable dpr
                 ^:mutable t ^:mutable last ^:mutable n ^:mutable running
@@ -329,7 +334,7 @@
   (let [backend (aget backends (name kind))]
     (when-not backend
       (throw (js/Error. (str "hammer: no " (name kind) " backend loaded (require hammer." (name kind) ")"))))
-    (let [st (State. inst backend kind loop? (or el (js/document.createElement "canvas")) (vswap! seq-no inc)
+    (let [st (State. inst backend kind loop? (or el (js/document.createElement "canvas")) (vswap! seq-no inc) (some? el)
                      nil nil false nil nil false
                      0 0 1
                      0 nil 0 false

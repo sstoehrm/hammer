@@ -1,6 +1,10 @@
 (ns hammer.fake-gl
   "jsdom has no WebGL: getContext(\"webgl2\", attrs) returns a recording fake
-  (mode :ok) or null (mode :none). restore! puts the original getContext back."
+  (mode :ok) or null (mode :none), cached per canvas like a real browser (a
+  later getContext call, e.g. on an adopted/remounted canvas, returns the same
+  object). isContextLost() reflects loseContext(); firing webglcontextrestored
+  on the canvas clears it, like a real recovered context. restore! puts the
+  original getContext back."
   (:require [hammer.test-env]))
 
 (defonce log (atom []))
@@ -9,15 +13,23 @@
 (def ^:private ops ["viewport" "clearColor" "clear" "drawArrays" "useProgram"])
 
 (defn- fake [^js c attrs]
-  (let [o #js {:canvas c :attrs attrs}]
+  (let [o #js {:canvas c :attrs attrs :__lost false}]
     (doseq [m ops]
       (aset o m (fn [& args] (swap! log conj (into [(keyword m) (.-id c)] args)))))
     (js/Object.defineProperty o "drawingBufferWidth" #js {:get (fn [] (.-width c))})
     (js/Object.defineProperty o "drawingBufferHeight" #js {:get (fn [] (.-height c))})
+    (aset o "isContextLost" (fn [] (.-__lost o)))
     (aset o "getExtension"
           (fn [n]
             (when (= n "WEBGL_lose_context")
-              #js {:loseContext (fn [] (swap! log conj [:loseContext (.-id c)]))})))
+              #js {:loseContext (fn []
+                                   (set! (.-__lost o) true)
+                                   (swap! log conj [:loseContext (.-id c)]))})))
+    ;; a real browser's context is no longer lost by the time it fires
+    ;; webglcontextrestored; this listener is added once, at creation, so it
+    ;; always runs before any listener a later mount attaches to the same
+    ;; (adopted) canvas.
+    (.addEventListener c "webglcontextrestored" (fn [_] (set! (.-__lost o) false)))
     o))
 
 (defn restore! []
