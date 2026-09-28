@@ -33,6 +33,8 @@ void main() { outColor = u_color; }
   (let [s (.createShader g type)]
     (.shaderSource g s src)
     (.compileShader g s)
+    (when-not (.getShaderParameter g s (.-COMPILE_STATUS g))
+      (js/console.error "hammer: shader compile failed" (.getShaderInfoLog g s)))
     s))
 
 (defn- init-triangle [^js g _info]
@@ -43,6 +45,8 @@ void main() { outColor = u_color; }
     (.attachShader g prog vs)
     (.attachShader g prog fs)
     (.linkProgram g prog)
+    (when-not (.getProgramParameter g prog (.-LINK_STATUS g))
+      (js/console.error "hammer: program link failed" (.getProgramInfoLog g prog)))
     (.deleteShader g vs)
     (.deleteShader g fs)
     (.bindBuffer g (.-ARRAY_BUFFER g) buf)

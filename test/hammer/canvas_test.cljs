@@ -277,7 +277,7 @@
 (deftest null-2d-context-is-logged-once
   (reset! state/app-db {})
   (let [c (js/document.createElement "canvas")]
-    (set! (.-getContext c) (fn [_] nil)) ; simulates a canvas already used for WebGPU
+    (set! (.-getContext c) (fn [_] nil)) ; simulates a canvas already used for another context type
     (let [logs (capture-errors
                 (fn [logs-atom]
                   (cv/mount! [bars "red" "null2d"] c)

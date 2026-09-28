@@ -76,7 +76,9 @@ const SCENARIOS = [
     desc: '1000 20x20 defdraw cells in a keyed hammer.core list (colour from [:colors id], highlight from (is? [:sel] id)); vanilla: 1000 hand-managed <canvas>' },
   { name: 'gl-points', kind: 'ops', build: 'bench-gl', vanilla: 'gl.js', app: 'gl', n: 100000,
     ops: ['create', 'update', 'clear'], pixels: true, gl: true,
-    desc: 'hammer.gl defdraw, 100000 points (gl.POINTS), uniform colour' },
+    desc: 'hammer.gl defdraw, 100000 points (gl.POINTS), uniform colour; preserveDrawingBuffer ' +
+      'is on in both variants (for readPixels parity), so absolute times include the ' +
+      'preserved-buffer copy' },
 ];
 
 // once: run (unmeasured, unthrottled) before throttling; each: run (unmeasured) before every iteration
@@ -427,6 +429,10 @@ async function main() {
       if (sc.gl) {
         if (glOk === null) glOk = await glSupported(browser, base);
         if (!glOk) { out.push(`## ${sc.name}\n\nskipped (no WebGL2 context)\n`); continue; }
+        // headless CI/dev machines often have no GPU, so Chromium falls back to a
+        // software (SwiftShader) WebGL2 renderer; absolute times aren't comparable
+        // to a hardware run, so flag it in the scenario's own description.
+        if (/swiftshader/i.test(renderer)) sc.desc += ' (SOFTWARE renderer)';
       }
       const bad = sc.kind === 'loop'
         ? await scenarioLoop(browser, base, sc, opts, out, idx)

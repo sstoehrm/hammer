@@ -4,7 +4,12 @@
   later getContext call, e.g. on an adopted/remounted canvas, returns the same
   object). isContextLost() reflects loseContext(); firing webglcontextrestored
   on the canvas clears it, like a real recovered context. restore! puts the
-  original getContext back."
+  original getContext back.
+
+  realistic exclusivity: a canvas that already has a 2d context
+  (hammer.fake-canvas's fake sets __fake2d) can't also get a webgl2 one --
+  getContext(\"webgl2\") returns null, like a real browser -- used to exercise
+  one component's context failing without breaking others."
   (:require [hammer.test-env]))
 
 (defonce log (atom []))
@@ -50,6 +55,8 @@
             (this-as ^js c
               (if (= kind "webgl2")
                 (when (= mode :ok)
-                  (or (.-__fakegl c)
-                      (let [o (fake c attrs)] (set! (.-__fakegl c) o) o)))
+                  (cond
+                    (.-__fake2d c) nil
+                    (.-__fakegl c) (.-__fakegl c)
+                    :else (let [o (fake c attrs)] (set! (.-__fakegl c) o) o)))
                 (.call prev c kind attrs)))))))

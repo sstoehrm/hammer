@@ -18,8 +18,8 @@
     (let [ctx (.getContext ^js (.-canvas st) "2d")]
       (when-not ctx
         ;; nil here means the canvas was already put into another mode (e.g.
-        ;; "webgpu"); a 2d context can never be obtained from it afterwards.
-        (js/console.error "hammer: 2d context unavailable (canvas already used for WebGPU?)"))
+        ;; "webgl2"); a 2d context can never be obtained from it afterwards.
+        (js/console.error "hammer: 2d context unavailable (canvas already has another context type, e.g. WebGL2?)"))
       (set! (.-ctx st) ctx))
     (.-canvas st))
   (fn [^draw/State st]

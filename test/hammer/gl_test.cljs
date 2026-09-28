@@ -2,6 +2,10 @@
   (:require [cljs.test :refer [deftest is use-fixtures]]
             [hammer.test-env]
             [hammer.fake-gl :as fgl]
+            ;; side effect only: fake-gl's poisoned-canvas check relies on
+            ;; fake-canvas's __fake2d flag, and must not depend on some other
+            ;; namespace happening to load it into the bundle first.
+            [hammer.fake-canvas]
             [hammer.test-util :refer [capture-errors]]
             [hammer.core :as core :refer [defc]]
             [hammer.gl :as gl :refer [defdraw defloop]]
@@ -52,6 +56,52 @@
     (is (= 2 (.-length (.querySelectorAll host "p"))))
     (is (= 0 (.-length (.querySelectorAll host "canvas"))))
     (is (= [[:unsupported "no WebGL2 context"] [:unsupported "no WebGL2 context"]] @res-log))))
+
+(def fb-log (atom []))
+
+(defdraw fb-a [] [] {:size [10 10] :on-unsupported (fn [_] (throw (js/Error. "boom")))}
+  (fn [_g _]))
+
+(defdraw fb-b [] [] {:size [10 10] :on-unsupported (fn [r] (swap! fb-log conj r))}
+  (fn [_g _]))
+
+(deftest one-throwing-on-unsupported-does-not-block-the-other-or-relog
+  (fgl/install! :none)
+  (reset! fb-log [])
+  (let [logs (capture-errors
+              (fn [_]
+                (gl/mount! [fb-a] (js/document.createElement "canvas"))
+                (gl/mount! [fb-b] (js/document.createElement "canvas"))))]
+    (is (= 1 (count (filter #(= "hammer: WebGL2 unavailable:" (first %)) logs)))
+        "the page-level unavailable message is logged exactly once")
+    (is (= 1 (count @fb-log)) "the second component's on-unsupported still ran despite the first throwing")))
+
+(deftest a-canvas-with-a-2d-context-falls-back-while-another-component-draws
+  (reset! state/app-db {:n 5})
+  (reset! res-log [])
+  (let [bad (js/document.createElement "canvas")
+        host (js/document.createElement "div")]
+    ;; a canvas that already has a 2d context can never get a webgl2 one:
+    ;; getContext "webgl2" returns null, like a real browser (fake-gl's
+    ;; __fake2d check). bad is mounted standalone (the poisoned canvas has to
+    ;; be adopted -- a DOM-embedded component always gets a fresh canvas from
+    ;; hammer, which can never already hold a context); the second, normal
+    ;; component is DOM-embedded in the same page, via `two` (two tri
+    ;; instances), exercising the wrap-span path core/mount! uses.
+    (.getContext bad "2d")
+    (let [logs (capture-errors
+                (fn [_]
+                  (gl/mount! [tri "bad"] bad)
+                  (core/mount! [two] host)
+                  (t/frame! 16)))]
+      (is (= 1 (count (filter #(= "hammer: WebGL2 unavailable:" (first %)) logs)))
+          "the bad canvas's missing context is logged once")
+      (is (= [[:viewport 0 0 100 50] [:clearColor 0 0 0 1] [:drawArrays 4 0 5]] (ops "x"))
+          "the other DOM-embedded component still draws")
+      (is (= [[:viewport 0 0 100 50] [:clearColor 0 0 0 1] [:drawArrays 4 0 5]] (ops "y"))
+          "...and so does its sibling")
+      (is (= [[:unsupported "no WebGL2 context"] [:init] [:draw :prog 5] [:init] [:draw :prog 5]]
+             @res-log)))))
 
 (defn- fire! [^js c type]
   (let [e (new (.-Event js/window) type #js {:cancelable true})]
