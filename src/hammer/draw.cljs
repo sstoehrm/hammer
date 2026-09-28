@@ -1,5 +1,5 @@
 (ns hammer.draw
-  "Runtime shared by draw components (hammer.canvas, hammer.gpu): the draw
+  "Runtime shared by draw components (hammer.canvas, hammer.gl): the draw
   runner, the frame queue and loop, and the canvas host (size, DPR, attrs,
   events). A Backend supplies the drawing context. A draw instance keeps its
   State in the instance's vnode field."
@@ -137,7 +137,7 @@
 
 (def ^:private non-event-on-keys
   "Opt keys starting with \"on-\" that are not DOM events, so sync-listeners!
-  must not register them: gpu's :on-unsupported is the only one."
+  must not register them: :on-unsupported is the gl option."
   #{:on-unsupported})
 
 (defn- event-type
@@ -243,7 +243,7 @@
           (if (contains? (.-opts st) :init) (f arg i (.-res st)) (f arg i))
           (catch :default e
             (js/console.error "hammer: draw failed in" (cname st) e)))))
-    ;; not drawable (zero size, no draw arg yet, e.g. gpu device pending, or
+    ;; not drawable (zero size, no draw arg yet, e.g. gl context lost, or
     ;; see will-draw?): a loop's clock stands still, :t and :n don't
     ;; advance, and as after a pause the next drawn frame gets :dt 0.
     (set! (.-last st) nil)))

@@ -17,8 +17,8 @@
                      :modules {:main {:init-fn size.dom/main}}}
           :size-canvas {:target :browser :output-dir "target/size/size-canvas" :asset-path "."
                         :modules {:main {:init-fn size.canvas/main}}}
-          :size-gpu {:target :browser :output-dir "target/size/size-gpu" :asset-path "."
-                     :modules {:main {:init-fn size.gpu/main}}}
+          :size-gl {:target :browser :output-dir "target/size/size-gl" :asset-path "."
+                    :modules {:main {:init-fn size.gl/main}}}
           ;; canvas benchmark (bench/canvas): bench-canvas and bench-gpu must not pull in hammer.core/hammer.dom
           :bench-canvas {:target :browser :output-dir "target/bench/bench-canvas" :asset-path "/out/bench-canvas"
                          :compiler-options {:infer-externs :auto :warnings-as-errors true}

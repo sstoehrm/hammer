@@ -4,10 +4,10 @@
             [hammer.fake-canvas :as fake]
             [hammer.core :as core :refer [defc]]
             [hammer.canvas :as cv :refer [defdraw]]
-            ;; #19's macro-expansion probe below calls hammer.gpu/defloop
+            ;; #19's macro-expansion probe below calls hammer.gl/defloop
             ;; fully-qualified; without this require, whether it's already
             ;; compiled depends on load order across test namespaces.
-            [hammer.gpu]
+            [hammer.gl]
             [hammer.draw :as draw]
             [hammer.events :as events]
             [hammer.state :as state]
@@ -307,7 +307,7 @@
   (is (= "defdraw: is? takes a path and a value"
          (expand-error (hammer.canvas/defdraw bad [] [a (is? [:x])] (fn [_ _])))))
   (is (= "defloop: is? takes a path and a value"
-         (expand-error (hammer.gpu/defloop bad [] [a (is? [:x])] (fn [_ _]))))))
+         (expand-error (hammer.gl/defloop bad [] [a (is? [:x])] (fn [_ _]))))))
 
 ;; ---- #11: a failed render or :init keeps the canvas's last content
 

@@ -205,7 +205,7 @@
   evaluates to an atom is local state; anything else is derived from the props
   and earlier bindings it names, and re-runs only when one of them changed.
   is? is recognized by symbol: unqualified is?, a qualified is? on any hammer
-  facade (hammer.core, hammer.app, hammer.canvas, hammer.gpu) or an alias of
+  facade (hammer.core, hammer.app, hammer.canvas, hammer.gl) or an alias of
   one, as the whole init. path and v may name props and earlier bindings.
   Literal hiccup in the body compiles to cloned templates (see compile-pos)."
   [cname props bindings & body]

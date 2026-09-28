@@ -1,5 +1,5 @@
 (ns hammer.app
-  "The event API shared by every variant facade (hammer.core, hammer.canvas, hammer.gpu)."
+  "The event API shared by every variant facade (hammer.core, hammer.canvas, hammer.gl)."
   (:require [hammer.events :as events]))
 
 (def reg-event events/reg-event)

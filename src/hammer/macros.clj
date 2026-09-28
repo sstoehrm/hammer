@@ -1,8 +1,8 @@
 (ns hammer.macros
   "Binding compilation shared by defc (hammer.core) and defdraw/defloop
-  (hammer.canvas, hammer.gpu).")
+  (hammer.canvas, hammer.gl).")
 
-(def ^:private facades '#{hammer.core hammer.app hammer.canvas hammer.gpu hammer.gl})
+(def ^:private facades '#{hammer.core hammer.app hammer.canvas hammer.gl})
 
 (defn deps-of
   "Indices of the slots named anywhere in form (metadata included)."
@@ -59,7 +59,7 @@
       (throw (ex-info (str macro ": duplicate prop or binding name") {:name cname :slots slots})))))
 
 (defn draw-def
-  "Expansion of defdraw/defloop for backend kind (:canvas or :gpu).
+  "Expansion of defdraw/defloop for backend kind (:canvas or :gl).
   more is [opts? draw-fn]; opts, when present, is a literal map."
   [env macro kind loop? cname props bindings more]
   (check-slots! macro cname props bindings)

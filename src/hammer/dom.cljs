@@ -625,7 +625,7 @@
 
 (defn mount!
   "Renders hiccup into container el, replacing what an earlier mount! (of any
-  renderer: hammer.canvas/hammer.gpu mount! too) put there."
+  renderer: hammer.canvas/hammer.gl mount! too) put there."
   [hiccup el]
   (cells/unmount-root! el)
   (set! (.-textContent ^js el) "")

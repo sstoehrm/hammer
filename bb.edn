@@ -33,10 +33,10 @@
            (println "core LOC:" n))}
 
   sizes
-  {:doc "Builds the dom/canvas/gpu size apps, prints raw and gzip sizes, and fails if a bundle contains another variant's namespaces"
-   :task (let [forbidden {"size-dom" ["hammer/draw.cljs" "hammer/canvas.cljs" "hammer/gpu.cljs"]
-                          "size-canvas" ["hammer/dom.cljs" "hammer/gpu.cljs"]
-                          "size-gpu" ["hammer/dom.cljs" "hammer/canvas.cljs"]}
+  {:doc "Builds the dom/canvas/gl size apps, prints raw and gzip sizes, and fails if a bundle contains another variant's namespaces"
+   :task (let [forbidden {"size-dom" ["hammer/draw.cljs" "hammer/canvas.cljs" "hammer/gl.cljs"]
+                          "size-canvas" ["hammer/dom.cljs" "hammer/gl.cljs"]
+                          "size-gl" ["hammer/dom.cljs" "hammer/canvas.cljs"]}
                out (fn [b] (str "target/size/" b "/main.js"))
                manifest (fn [b] (str "target/size/" b "/manifest.edn"))
                gz (fn [f] (let [bos (java.io.ByteArrayOutputStream.)]

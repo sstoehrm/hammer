@@ -16,6 +16,6 @@
   capped at :max-dt, default 100; 0 for a redraw while paused) and :n (frame
   count). The clock also freezes (no change to :t/:n, next drawn frame gets
   :dt 0) on any frame the canvas can't draw, e.g. zero size. Canvas 2D has no
-  :fallback (that option is hammer.gpu only)."
+  :fallback (that option is hammer.gl only)."
   [cname props bindings & more]
   (m/draw-def &env "defloop" :canvas true cname props bindings more))
