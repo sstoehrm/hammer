@@ -25,7 +25,8 @@ const CHROME = process.env.CHROME || '/snap/bin/chromium';
 
 function parseArgs(argv) {
   const o = { scenario: null, iterations: 20, warmups: 3, variants: ['vanilla', 'hammer'],
-    windowMs: 5000, loopWarmupMs: 1000, throttle: 4, dpr: 1 };
+    windowMs: 5000, loopWarmupMs: 1000, throttle: 4, dpr: 1,
+    swiftshader: process.env.HAMMER_SWIFTSHADER === '1' };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i], v = () => {
       if (i + 1 >= argv.length) throw new Error(`missing value for ${a}`);
@@ -39,9 +40,10 @@ function parseArgs(argv) {
       case '--window-ms': o.windowMs = parseInt(v(), 10); break;
       case '--throttle': o.throttle = parseFloat(v()); break;
       case '--dpr': o.dpr = parseFloat(v()); break;
+      case '--enable-unsafe-swiftshader': o.swiftshader = true; break;
       case '-h': case '--help':
         console.log('usage: node bench/canvas/run.mjs [--scenario a,b] [--iterations N] [--variants hammer,vanilla]\n' +
-          '       [--warmups N] [--window-ms MS] [--throttle X] [--dpr D]\n' +
+          '       [--warmups N] [--window-ms MS] [--throttle X] [--dpr D] [--enable-unsafe-swiftshader]\n' +
           'scenarios: ' + SCENARIOS.map(s => s.name).join(', '));
         process.exit(0);
         break;
@@ -90,6 +92,14 @@ function opPlan(op, throttle) {
   }
 }
 
+// On a GPU-less machine, headless Chromium's automatic fallback to software
+// (SwiftShader) WebGL is deprecated ("Automatic fallback to software WebGL
+// has been deprecated") and a future Chromium may drop it, at which point
+// gl-points would report "skipped (no WebGL2 context)" instead of running on
+// SwiftShader as it does today. --enable-unsafe-swiftshader (opt-in via
+// HAMMER_SWIFTSHADER=1 or this script's own --enable-unsafe-swiftshader flag,
+// default off -- a real GPU doesn't need it) restores that software renderer
+// explicitly. See bench/canvas/README.md.
 const BASE_ARGS = ['--js-flags=--expose-gc', '--disable-renderer-backgrounding', '--disable-background-timer-throttling',
   '--disable-backgrounding-occluded-windows', '--no-first-run', '--disable-extensions', '--hide-scrollbars'];
 const VIEWPORT = { width: 1400, height: 1500 };
@@ -396,8 +406,9 @@ async function main() {
 
   const srv = await serve();
   const base = `http://127.0.0.1:${srv.address().port}`;
+  const swiftshaderArgs = opts.swiftshader ? ['--enable-unsafe-swiftshader'] : [];
   const launch = extra => puppeteer.launch({ executablePath: CHROME, headless: true,
-    args: [...BASE_ARGS, ...extra], protocolTimeout: 600000 });
+    args: [...BASE_ARGS, ...swiftshaderArgs, ...extra], protocolTimeout: 600000 });
 
   const out = [];
   let failed = false;

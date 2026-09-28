@@ -28,8 +28,17 @@ then runs `run.mjs` with the arguments passed through.
 | `--window-ms MS` | 5000 | loop measurement window (after a 1 s warm-up) |
 | `--throttle X` | 4 | CPU throttle for update/select/swap |
 | `--dpr D` | 1 | `deviceScaleFactor` (exercises the `ceil(w * dpr)` backing store) |
+| `--enable-unsafe-swiftshader` | off | pass Chromium's `--enable-unsafe-swiftshader` flag (also via `HAMMER_SWIFTSHADER=1`) |
 
 Browser: `/snap/bin/chromium`, headless, override with `CHROME=/path/to/chrome`.
+On a GPU-less machine, headless Chromium's automatic fallback to software
+(SwiftShader) WebGL is deprecated ("Automatic fallback to software WebGL has
+been deprecated. Please use the --enable-unsafe-swiftshader flag") and a
+future Chromium may drop it, at which point `gl-points` would report
+`skipped (no WebGL2 context)` instead of running on SwiftShader as it does
+today. Pass `--enable-unsafe-swiftshader` (or set `HAMMER_SWIFTSHADER=1`) to
+opt into that flag and keep `gl-points` working; it's off by default since a
+machine with a real GPU doesn't need it.
 Output: a markdown header (browser version, WebGL renderer, CPU, load average,
 throttle, iterations, DPR) and one table per scenario on stdout; progress on
 stderr. Exit 1 on a pixel-parity mismatch or a page error.

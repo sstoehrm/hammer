@@ -9,9 +9,9 @@ Full run of `node bench/canvas/run.mjs` (all scenarios, defaults) at commit
 - Iterations: 3 warm-ups + 20 measured per op; loops: 1 s warm-up + 5 s window
 - Noise: expect ±5–10% between runs on the script column; loops varied ±10% run to
   run at 100k. Rows whose script time is below ~1 ms at 4x (many-canvases
-  update/select, gpu-points update, the clears) are dominated by per-trigger
-  noise: vanilla's many-canvases update/select median ranged 0.09–0.56 ms across
-  runs, so their ratios are not meaningful — compare the absolute deltas.
+  update/select, the clears) are dominated by per-trigger noise: vanilla's
+  many-canvases update/select median ranged 0.09–0.56 ms across runs, so
+  their ratios are not meaningful — compare the absolute deltas.
 - Not comparable with numbers taken before these two accounting fixes:
   1. the trigger runs in its own `setTimeout(0)` task (bench commit 3d83c50):
      script that CDP's `Runtime.callFunctionOn` runs synchronously is not in
@@ -126,9 +126,9 @@ see `docs/superpowers/specs/2026-09-28-webgl2-backend-design.md` for why (WebGPU
 not usable by default in Firefox or on Linux Chromium). The table below is a
 **single run** (`node bench/canvas/run.mjs --scenario gl-points`, default 3
 warm-ups + 20 measured iterations) — one invocation, not repeated to gauge
-run-to-run noise the way the note above does for the full suite — taken at commit
-8600a37 (`canvas/webgl2`), 2026-09-28, same machine as the header above (Radeon
-8060S). Headless Chromium used its software (SwiftShader) WebGL2 renderer rather
+run-to-run noise the way the note above does for the full suite — bench code as
+of 8600a37, runner from 5fe1982 (`canvas/webgl2`), 2026-09-28, same machine as
+the header above (Radeon 8060S). Headless Chromium used its software (SwiftShader) WebGL2 renderer rather
 than that GPU (headless Chromium falls back to software rendering by default,
 without `--use-angle=vulkan`/`--use-gl` flags), so absolute times are not
 comparable to a hardware run and are noted as such below; `preserveDrawingBuffer` is
