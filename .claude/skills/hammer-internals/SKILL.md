@@ -150,8 +150,8 @@ can't draw. On `webglcontextrestored` it calls `draw/queue!`, which requests a f
 | Symptom | Cause |
 |---|---|
 | Child re-renders on every parent render | inline `fn` prop is never `=`; pass an event vector or bind the fn in the parent |
-| `(.-currentTarget e)` is the mount container | handlers are delegated from the container's capture listener; a fn handler's second arg is its own element |
-| `:aria-expanded false` writes `"false"`, `:disabled false` removes | `set-plain!`: booleans on `draggable`/`spellcheck`/`contenteditable`/`aria-*` become `"true"`/`"false"`; on other attrs `true` → `""`, `false` → removed |
+| `(.-currentTarget e)` is the mount container | handlers are delegated from the container's capture listener; a fn handler is always called `(h e el)`, el its own element (a multi-arity handler needs a 2-arity) |
+| `:aria-expanded false` writes `"false"`, `:disabled false` removes | `set-plain!`: booleans on `draggable`/`spellcheck`/`contenteditable`/`writingsuggestions`/`aria-*` become `"true"`/`"false"`; on other attrs `true` → `""`, `false` → removed |
 | `(atom x)` ignores new `x` | the init runs once per instance; remount via a `^{:key}` change in a fully keyed list |
 | `(vector a b)` vs `[a b]` | the literal is a path; the call is a value |
 | "handler for :x returned no known effect keys (…)" (reported, no throw) | handler returned `db` (or its only fx was never `reg-fx`ed): nothing runs. If any key is `:db`, `:dispatch` or a registered fx, the map is processed normally and each unknown key reports "no fx registered for" |

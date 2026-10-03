@@ -34,9 +34,12 @@ and `nil` on removal, so write it as `#(some-> % .focus)` rather than assuming a
 non-nil element. Handlers run from one capture-phase listener per event type on
 the `mount!` container, so `(.-currentTarget e)` is that container; a fn
 handler gets the element it is on as a second argument instead:
-`(fn [e el] …)` (`(fn [e] …)` works too). Attribute values: `nil` removes the
+`(fn [e el] …)`. Handlers are always called with these two arguments: a
+one-arg `(fn [e] …)` ignores the second, but a multi-arity fn needs a 2-arity,
+and an optional second parameter receives the element. Attribute values: `nil` removes the
 attribute, `true`/`false` add or remove it (`:disabled true` → `disabled=""`),
-except for `draggable`, `spellcheck`, `contenteditable` and `aria-*`, which take
+except for `draggable`, `spellcheck`, `contenteditable`, `writingsuggestions`
+and `aria-*`, which take
 the strings `"true"`/`"false"`; anything else is written with `str`.
 `:class` string or collection;
 `:style` map of CSS property names (`:background-color`; dev builds warn on

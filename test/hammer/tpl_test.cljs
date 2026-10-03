@@ -508,13 +508,13 @@
 ;; ---- enumerated attributes take "true"/"false", not presence
 
 (defboth enumerated [d h] [:div {:draggable d :aria-expanded d :aria-hidden h :spellcheck h
-                                  :contenteditable d :disabled d :data-flag d} "x"])
+                                  :contenteditable d :disabled d :data-flag d :writingsuggestions h} "x"])
 
 (deftest enumerated-attrs-write-true-and-false
   (let [el (check! enumerated enumerated-plain [:d :h]
                    [{:d true :h false} {:d false :h true} {:d nil :h nil} {:d true :h false}])]
     (is (= {"draggable" "true" "aria-expanded" "true" "aria-hidden" "false" "spellcheck" "false"
-            "contenteditable" "true" "disabled" "" "data-flag" ""}
+            "contenteditable" "true" "disabled" "" "data-flag" "" "writingsuggestions" "false"}
            (into {} (map (fn [^js a] [(.-name a) (.-value a)])) (js/Array.from (.. el -firstChild -attributes))))
         "boolean attributes like disabled keep presence semantics"))
   (events/set-db! {:d false :h true})
@@ -522,7 +522,7 @@
   (let [el (container)]
     (dom/mount! [enumerated] el)
     (is (= {"draggable" "false" "aria-expanded" "false" "aria-hidden" "true" "spellcheck" "true"
-            "contenteditable" "false"}
+            "contenteditable" "false" "writingsuggestions" "true"}
            (into {} (map (fn [^js a] [(.-name a) (.-value a)])) (js/Array.from (.. el -firstChild -attributes))))
         "false is written for enumerated attributes, removed for the others")))
 

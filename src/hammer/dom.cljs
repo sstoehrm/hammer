@@ -155,7 +155,8 @@
 (defn- enumerated?
   "Attributes whose value is the string \"true\" or \"false\", not presence."
   [n]
-  (or (= n "draggable") (= n "spellcheck") (= n "contenteditable") (str/starts-with? n "aria-")))
+  (or (= n "draggable") (= n "spellcheck") (= n "contenteditable") (= n "writingsuggestions")
+      (str/starts-with? n "aria-")))
 
 (defn- set-plain! [^js el n v]
   (cond

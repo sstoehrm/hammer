@@ -215,10 +215,14 @@
   facade (hammer.core, hammer.app, hammer.canvas, hammer.gl) or an alias of
   one, as the whole init. path and v may name props and earlier bindings.
   Literal hiccup in the body compiles to cloned templates (see compile-pos)."
-  [cname props bindings & body]
+  [cname props & [bindings & body]]
+  (m/check-slots! "defc" cname props bindings)
+  ;; [child id] where bindings go parses as one binding and leaves no body
+  (when (and (empty? body) (seq bindings))
+    (throw (ex-info (str "defc " cname ": missing bindings vector, write (defc " cname " " (pr-str props) " [] body)")
+                    {:name cname})))
   (let [pairs (partition 2 bindings)
         slots (into (vec props) (map first pairs))]
-    (m/check-slots! "defc" cname props bindings)
     (let [defs (atom [])
           out (if (seq body)
                 (conj (vec (butlast body)) (compile-pos {:cname cname :defs defs} (last body)))
