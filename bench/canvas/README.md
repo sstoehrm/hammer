@@ -52,7 +52,7 @@ The load average in the header matters: run on an otherwise idle machine.
 | `table-1k` | one `defdraw`, 1000 rows: `fillRect` + `fillText` label each, 10 columns | create, update every 10th label, select a row, swap rows 1 and n-2, clear |
 | `rects-10k` | one `defdraw`, 10000 `fillRect`s (no text, it would dominate) | same ops (update = recolour every 10th) |
 | `loop-1k` / `loop-10k` / `loop-100k` | `defloop`, N moving 3x3 rects, state in `(volatile! …)` | frame time + script time per frame over 5 s |
-| `loop-atom-10k` | same as `loop-10k` but state in `(atom …)` + `swap!` (the pattern the README warns against) | same; vanilla is identical to `loop-10k`'s |
+| `loop-atom-10k` | same as `loop-10k` but state in `(atom …)` + `swap!` (the pattern docs/develop-with-a-hammer.md warns against) | same; vanilla is identical to `loop-10k`'s |
 | `many-canvases-1k` | 1000 20x20 `defdraw` cells in a keyed `hammer.core` `defc` list; colour from `[:colors id]` (a map keyed by id, hammer's trie fast path), highlight from `(is? [:sel] id)` | create, update one cell's colour, select one cell, clear |
 | `gl-points` | `hammer.gl` `defdraw`, 100000 points (`gl.POINTS`), colour uniform | create, update colour, clear. Skipped (`skipped (no WebGL2 context)`) without one |
 

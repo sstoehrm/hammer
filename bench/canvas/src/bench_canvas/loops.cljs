@@ -3,7 +3,7 @@
   (the same ones the vanilla loop uses); `step` mutates them and returns a
   fresh wrapper each frame, in both variants. `particles` keeps the wrapper in
   a volatile! (the documented pattern); `particles-atom` in a watched atom
-  with swap! (the pattern the README warns against)."
+  with swap! (the pattern docs/develop-with-a-hammer.md warns against)."
   (:require [hammer.canvas :refer [defloop mount!]]
             [bench-canvas.common :as c :refer [D]]))
 
