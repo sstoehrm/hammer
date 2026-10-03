@@ -52,7 +52,7 @@
   (reset! res-log [])
   (let [host (js/document.createElement "div")
         logs (capture-errors (fn [_] (core/mount! [two] host)))]
-    (is (= 1 (count (filter #(= "hammer: WebGL2 unavailable:" (first %)) logs))))
+    (is (= 1 (count (filter #(re-find #"^hammer: WebGL2 unavailable:" (first %)) logs))))
     (is (= 2 (.-length (.querySelectorAll host "p"))))
     (is (= 0 (.-length (.querySelectorAll host "canvas"))))
     (is (= [[:unsupported "no WebGL2 context (canvas already has another context type?)"] [:unsupported "no WebGL2 context (canvas already has another context type?)"]] @res-log))))
@@ -72,7 +72,7 @@
               (fn [_]
                 (gl/mount! [fb-a] (js/document.createElement "canvas"))
                 (gl/mount! [fb-b] (js/document.createElement "canvas"))))]
-    (is (= 1 (count (filter #(= "hammer: WebGL2 unavailable:" (first %)) logs)))
+    (is (= 1 (count (filter #(re-find #"^hammer: WebGL2 unavailable:" (first %)) logs)))
         "the page-level unavailable message is logged exactly once")
     (is (= 1 (count @fb-log)) "the second component's on-unsupported still ran despite the first throwing")))
 
@@ -94,7 +94,7 @@
                   (gl/mount! [tri "bad"] bad)
                   (core/mount! [two] host)
                   (t/frame! 16)))]
-      (is (= 1 (count (filter #(= "hammer: WebGL2 unavailable:" (first %)) logs)))
+      (is (= 1 (count (filter #(re-find #"^hammer: WebGL2 unavailable:" (first %)) logs)))
           "the bad canvas's missing context is logged once")
       (is (= [[:viewport 0 0 100 50] [:clearColor 0 0 0 1] [:drawArrays 4 0 5]] (ops "x"))
           "the other DOM-embedded component still draws")
@@ -131,7 +131,7 @@
     (t/frame! 16)
     (let [logs (capture-warnings (fn [_] (fire! c "webglcontextlost")))]
       (is (= 1 (count logs)) "exactly one console.warn for the loss")
-      (is (some #(= "tri" %) (first logs)) "names the lost component"))))
+      (is (re-find #"context lost in tri " (first (first logs))) "names the lost component"))))
 
 (deftest loss-then-unmount-disposes-once
   (reset! state/app-db {:n 1})

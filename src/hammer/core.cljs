@@ -1,5 +1,5 @@
 (ns hammer.core
-  "Public API: reg-event, reg-fx, dispatch, dispatch-sync, defc, is?, mount!."
+  "Public API: reg-event, reg-fx, dispatch, dispatch-sync, on-error!, defc, is?, mount!."
   (:require-macros [hammer.core])
   (:require [hammer.app :as app]
             [hammer.cells]
@@ -10,6 +10,7 @@
 (def reg-fx app/reg-fx)
 (def dispatch app/dispatch)
 (def dispatch-sync app/dispatch-sync)
+(def on-error! app/on-error!)
 (def is? app/is?)
 
 (defn mount!

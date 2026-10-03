@@ -5,7 +5,8 @@
             [hammer.events :as events]
             [hammer.dom :as dom]
             [hammer.testing :as t]
-            [hammer.core :refer [defc]]))
+            [hammer.core :refer [defc]]
+            [hammer.test-util :refer [capture-errors]]))
 
 (use-fixtures :each {:before t/reset-app!})
 
@@ -138,14 +139,10 @@
 (deftest render-error-keeps-previous-dom
   (reset! state/app-db {:n 1})
   (let [el (container)
-        logs (atom [])
-        orig js/console.error]
-    (dom/mount! [fragile] el)
-    (set! js/console.error (fn [& a] (swap! logs conj (vec (take 2 a)))))
-    (try (events/dispatch-sync [:set :n 2])
-         (finally (set! js/console.error orig)))
+        _ (dom/mount! [fragile] el)
+        logs (capture-errors (fn [_] (events/dispatch-sync [:set :n 2])))]
     (is (= "<p>1</p>" (.-innerHTML el)))
-    (is (= [["hammer: render failed in" "fragile"]] @logs))
+    (is (= ["hammer: render failed in fragile"] (mapv first logs)))
     (events/dispatch-sync [:set :n 3])
     (is (= "<p>3</p>" (.-innerHTML el)))))
 
@@ -247,14 +244,9 @@
 (deftest child-binding-init-throw-is-isolated
   (reset! state/app-db {:flag false})
   (let [el (container)
-        logs (atom [])
-        orig js/console.error]
-    (set! js/console.error (fn [& a] (swap! logs conj (vec (take 2 a)))))
-    (try
-      (dom/mount! [two-kids] el)
-      (finally (set! js/console.error orig)))
+        logs (capture-errors (fn [_] (dom/mount! [two-kids] el)))]
     (is (= "<div data-flag=\"false\"><i>ok1</i><b>bad2</b></div>" (.-innerHTML el)))
-    (is (= [["hammer: render failed in" "bad-child"]] @logs))
+    (is (= ["hammer: render failed in bad-child"] (mapv first logs)))
     (events/dispatch-sync [:set :flag true])
     (is (= "<div data-flag=\"true\"><i>ok1</i><b>bad2</b></div>" (.-innerHTML el)))))
 

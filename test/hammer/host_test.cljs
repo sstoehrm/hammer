@@ -162,7 +162,7 @@
     (let [errs (first-two (capture-errors (fn [_] (events/dispatch-sync [::set-ids-and-label [] "b"]))))]
       (is (= [[:destroy 1] [:destroy 2] [:destroy 3]] (sort @log4)) "every removed instance is destroyed")
       (is (= "<div><ul></ul><b>b</b></div>" (.-innerHTML el)) "the parent's patch completes")
-      (is (= (repeat 3 ["hammer: destroy failed in" "grumpy"]) errs) "each throw is logged by component name"))
+      (is (= (repeat 3 "hammer: destroy failed in grumpy") (map first errs)) "each throw is logged by component name"))
     (reset! log4 [])
     (events/dispatch-sync [::set :g 1])
     (is (= [] @log4) "their [:g] subscriptions are gone")))
@@ -175,7 +175,7 @@
     (let [errs (first-two (capture-errors (fn [_] (events/dispatch-sync [::set :label "b"]))))]
       (is (= [[:run 1] [:run 2]] @log4) "both hosted instances run")
       (is (= "<div><ul><i></i><i></i></ul><b>b</b></div>" (.-innerHTML el)) "the parent's patch completes")
-      (is (= (repeat 2 ["hammer: update failed in" "runny"]) errs)))))
+      (is (= (repeat 2 "hammer: update failed in runny") (map first errs))))))
 
 ;; ---- #17: a Host create that returns nil fails fast with a clear message
 

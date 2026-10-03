@@ -6,7 +6,8 @@
   (:require [clojure.string :as str]
             [goog.object :as gobj]
             [hammer.cells :as cells]
-            [hammer.events :as events]))
+            [hammer.events :as events]
+            [hammer.log :as log]))
 
 ;; t :text/:el/:comp, or :tpl (from defc): tag = Tpl, attrs = hole values,
 ;; args (:comp) = the whole hiccup vector, props from index 1;
@@ -172,7 +173,7 @@
   (try
     (f el)
     (catch :default e
-      (js/console.error "hammer: :ref failed" e))))
+      (log/report! :error "hammer: :ref failed" e))))
 
 (defn- run-refs!
   "Calls :ref fns queued by create! once their elements are in the document."
@@ -397,7 +398,7 @@
   (try
     (normalize (cells/render inst))
     (catch :default e
-      (js/console.error "hammer: render failed in" (.-cname ^cells/Comp (.-comp inst)) e)
+      (log/report! :error (str "hammer: render failed in " (.-cname ^cells/Comp (.-comp inst))) e)
       nil)))
 
 (defn- mount-inst! [^cells/Instance inst]
@@ -418,7 +419,7 @@
               (try
                 ((.-destroy h) inst)
                 (catch :default e
-                  (js/console.error "hammer: destroy failed in" (.-cname ^cells/Comp (.-comp v)) e)
+                  (log/report! :error (str "hammer: destroy failed in " (.-cname ^cells/Comp (.-comp v))) e)
                   ;; whatever the host left undone, its subscriptions go
                   (when (.-mounted inst) (cells/destroy! inst))))
               (do (unmount! (.-vnode inst))
@@ -447,7 +448,7 @@
   (when (.-mounted inst)
     (when (try (cells/refresh! inst)
                (catch :default e
-                 (js/console.error "hammer: render failed in" (.-cname ^cells/Comp (.-comp inst)) e)
+                 (log/report! :error (str "hammer: render failed in " (.-cname ^cells/Comp (.-comp inst))) e)
                  false))
       (when-let [v (body-vnode inst)]
         (let [old (.-vnode inst)]
@@ -465,7 +466,7 @@
   [^js kids]
   (let [n (alength kids)
         key-at (fn [i] (.-key ^VNode (aget kids i)))
-        dup (fn [] (js/console.warn "hammer: duplicate keys, falling back to index diff"))
+        dup (fn [] (log/report! :warn "hammer: duplicate keys, falling back to index diff" nil))
         m (when (and (pos? n) (some? (key-at 0)))
             (if (loop [i 0] (or (== i n) (and (js-key? (key-at i)) (recur (inc i)))))
               (let [m (js/Map.)]
@@ -618,7 +619,7 @@
                     ((.-run h) inst)
                     (catch :default e
                       (set! (.-dirty ^cells/Instance inst) false)
-                      (js/console.error "hammer: update failed in" (.-cname ^cells/Comp (.-comp nu)) e)))
+                      (log/report! :error (str "hammer: update failed in " (.-cname ^cells/Comp (.-comp nu))) e)))
                   (update-inst! inst)))))))
 
 ;; ---- roots
@@ -657,7 +658,7 @@
      (try
        (update-inst! inst)
        (catch :default e
-         (js/console.error "hammer: update failed in" (.-cname ^cells/Comp (.-comp inst)) e))
+         (log/report! :error (str "hammer: update failed in " (.-cname ^cells/Comp (.-comp inst))) e))
        (finally
          (when (pos? (.-size new-types)) (listen-root! (root-of inst)))
          (.clear new-types)

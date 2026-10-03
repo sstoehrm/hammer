@@ -494,7 +494,7 @@
     (cv/mount! [teardown-boom] el)
     (is (= (inc before) (.-refs state/paths)) "the [:tb] path subscription is registered")
     (let [logs (capture-errors (fn [_] (cv/mount! [teardown-boom] el)))]
-      (is (= ["hammer: teardown failed in" "teardown-boom"] (vec (take 2 (first logs))))
+      (is (= "hammer: teardown failed in teardown-boom" (first (first logs)))
           "logged with the component name, not left to crash the unmount")
       (is (= 1 (count logs)))
       (is (= (inc before) (.-refs state/paths))

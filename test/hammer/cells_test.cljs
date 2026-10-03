@@ -101,7 +101,7 @@
     (let [logs (capture-errors (fn [_] (cells/unmount-roots!)))]
       (is (= [el2] @unmounted) "the second root's unmount fn still runs after the first throws")
       (is (= 1 (count logs)) "the throwing unmount fn is logged, not left to crash the rest")
-      (is (= ["hammer: unmount failed for" el1] (vec (take 2 (first logs))))
+      (is (= "hammer: unmount failed for DIV" (first (first logs)))
           "the log names which element's unmount fn threw"))))
 
 (deftype Fake [depth ^:mutable dirty id])

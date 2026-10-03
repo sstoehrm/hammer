@@ -1,5 +1,5 @@
 (ns hammer.events-test
-  (:require [cljs.test :refer [deftest is async]]
+  (:require [cljs.test :refer [deftest is async testing]]
             [hammer.test-env]
             [hammer.state :as state]
             [hammer.events :as ev]
@@ -45,9 +45,9 @@
                                (ev/dispatch-sync [:missing])
                                (ev/dispatch-sync [:bad-fx])))]
     (is (= {:n 0} @state/app-db))
-    (is (= ["hammer: event handler failed"
-            "hammer: no event handler for"
-            "hammer: no fx registered for"]
+    (is (= ["hammer: event handler failed [:boom]"
+            "hammer: no event handler for :missing"
+            "hammer: handler for :bad-fx returned no known effect keys (:nope) - did it return db instead of {:db db}, or miss a reg-fx?"]
            (mapv first logs)))))
 
 (deftest dispatch-sync-inside-handler-fails
@@ -63,9 +63,36 @@
   (ev/reg-event :db-only (fn [db] db))
   (let [logs (capture-errors (fn [_] (ev/dispatch-sync :oops)
                                (ev/dispatch-sync [:db-only])))]
-    (is (= "hammer: event must be a vector, got" (first (first logs))))
-    (is (re-find #"\{:db db\}" (last (second logs))))
+    (is (= "hammer: event must be a vector, got :oops" (first (first logs))))
+    (is (re-find #"handler for :db-only returned no known effect keys \(:n\) - did it return db instead of \{:db db\}"
+                 (first (second logs))))
+    (is (= 2 (count logs)) "one error for the returned db, not one per key")
     (is (= {:n 0} @state/app-db))))
+
+(deftest returned-db-never-runs-an-fx
+  (reset! state/app-db {:a 1 :b 2})
+  (ev/reg-event :db-only-2 (fn [db] db))
+  (let [ran (atom [])]
+    (ev/reg-fx :c (fn [v] (swap! ran conj v)))
+    (let [logs (capture-errors (fn [_] (ev/dispatch-sync [:db-only-2])))]
+      (is (re-find #"no known effect keys \(:a :b\)" (first (first logs))))
+      (is (= 1 (count logs))))
+    (testing "a map with a registered fx key still runs it and reports the others"
+      (ev/reg-event :mixed (fn [_] {:c 1 :unknown 2}))
+      (let [logs (capture-errors (fn [_] (ev/dispatch-sync [:mixed])))]
+        (is (= [1] @ran))
+        (is (= ["hammer: no fx registered for :unknown"] (mapv first logs)))))
+    (testing "an empty map does nothing and reports nothing"
+      (ev/reg-event :empty (fn [_] {}))
+      (is (= [] (capture-errors (fn [_] (ev/dispatch-sync [:empty]))))))))
+
+(deftest dispatching-an-fx-id-says-so
+  (ev/reg-fx :some-fx (fn [_]))
+  (let [logs (capture-errors (fn [_] (ev/dispatch-sync [:some-fx 1])
+                               (ev/dispatch-sync [:not-anything])))]
+    (is (= ["hammer: no event handler for :some-fx (:some-fx is an fx: return {:some-fx value} from an event handler)"
+            "hammer: no event handler for :not-anything"]
+           (mapv first logs)))))
 
 (deftest dispatch-renders-before-next-task
   (async done

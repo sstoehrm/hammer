@@ -6,7 +6,8 @@
             [hammer.draw :as draw]
             [hammer.events :as events]
             [hammer.state :as state]
-            [hammer.testing :as t]))
+            [hammer.testing :as t]
+            [hammer.test-util :refer [capture-errors]]))
 
 (def seen (atom []))
 (def raf-calls (atom 0))
@@ -93,14 +94,12 @@
 
 (deftest a-throwing-loop-keeps-running-and-others-draw
   (reset! state/app-db {:x 1})
-  (let [orig js/console.error]
-    (set! js/console.error (fn [& _]))
-    (try
-      (cv/mount! [crashy] (div))
-      (cv/mount! [steady] (div))
-      (t/frame! 0) (t/frame! 16) (t/frame! 32)
-      (is (= [[:crashy 1] [:steady 1] [:crashy 2] [:crashy 3]] @seen))
-      (finally (set! js/console.error orig)))))
+  (capture-errors
+   (fn [_]
+     (cv/mount! [crashy] (div))
+     (cv/mount! [steady] (div))
+     (t/frame! 0) (t/frame! 16) (t/frame! 32)
+     (is (= [[:crashy 1] [:steady 1] [:crashy 2] [:crashy 3]] @seen)))))
 
 ;; ---- #12: the loop clock stands still while the canvas can't be drawn
 

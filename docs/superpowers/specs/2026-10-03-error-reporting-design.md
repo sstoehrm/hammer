@@ -46,7 +46,7 @@ cases listed in the `hammer-app` skill (PR #23).
 
 | # | Case | Change |
 |---|---|---|
-| 2 | handler returns `db` | A non-empty effect map with no `:db`, no `:dispatch` and no key registered with `reg-fx` logs one error, `hammer: handler for :id returned a map with no effect keys (:a :b) - return {:db db}, not db`, and runs nothing. Otherwise unchanged. |
+| 2 | handler returns `db` | A non-empty effect map with no `:db`, no `:dispatch` and no key registered with `reg-fx` logs one error, `hammer: handler for :id returned no known effect keys (:a :b) - did it return db instead of {:db db}, or miss a reg-fx?`, and runs nothing. (The same map is what a handler returns when its only fx was never registered, hence both hints.) Otherwise unchanged. |
 | 3 | `dispatch` on an fx id | `no event handler for :k` gets the hint `(:k is an fx: return {:k value} from an event handler)` when `:k` is registered with `reg-fx`. |
 | 4 | some list items unkeyed | When a kid list has both keyed and unkeyed items, warn `hammer: some list items have no key, falling back to index diff` (like the duplicate-key warning). A list with no keys stays silent. |
 | 5 | `:key` in the attrs map | Honoured as the element's key (`^{:key}` metadata wins when both are given) and not written as an attribute, in `normalize` and in compiled templates. Components still take keys only from metadata. |

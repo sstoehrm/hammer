@@ -3,7 +3,8 @@
   (:require [hammer.state :as state]
             [hammer.trie :as trie]
             [hammer.cells :as cells]
-            [hammer.scheduler :as sched]))
+            [hammer.scheduler :as sched]
+            [hammer.log :as log]))
 
 (deftype State [^:mutable scheduled ^:mutable in-handler])
 
@@ -39,30 +40,39 @@
   (try
     (apply h @state/app-db (rest ev))
     (catch :default e
-      (js/console.error "hammer: event handler failed" (pr-str ev) e)
+      (log/report! :error (str "hammer: event handler failed " (pr-str ev)) e)
       nil)
     (finally (set! (.-in-handler st) false))))
 
 (defn- run-fx! [k v]
   (if-let [f (get @fxs k)]
     (try (f v)
-         (catch :default e (js/console.error "hammer: fx failed" (pr-str k) e)))
-    (js/console.error "hammer: no fx registered for" (pr-str k)
-                      "- did the handler return db instead of {:db db}?")))
+         (catch :default e (log/report! :error (str "hammer: fx failed " (pr-str k)) e)))
+    (log/report! :error (str "hammer: no fx registered for " (pr-str k)) nil)))
 
 (defn- process! [ev]
   (cond
     (not (vector? ev))
-    (js/console.error "hammer: event must be a vector, got" (pr-str ev))
+    (log/report! :error (str "hammer: event must be a vector, got " (pr-str ev)) nil)
 
     (nil? (get @handlers (first ev)))
-    (js/console.error "hammer: no event handler for" (pr-str (first ev)))
+    (let [id (pr-str (first ev))]
+      (log/report! :error (str "hammer: no event handler for " id
+                               (when (contains? @fxs (first ev))
+                                 (str " (" id " is an fx: return {" id " value} from an event handler)")))
+                   nil))
 
     :else
     (let [fx (call-handler (get @handlers (first ev)) ev)]
       (cond
         (nil? fx) nil
-        (not (map? fx)) (js/console.error "hammer: handler must return an effect map" (pr-str ev))
+        (not (map? fx)) (log/report! :error (str "hammer: handler must return an effect map " (pr-str ev)) nil)
+        ;; no key hammer knows: usually the db itself, returned instead of {:db db};
+        ;; one report instead of one per db key, and nothing runs
+        (and (seq fx) (not-any? #(or (= % :db) (= % :dispatch) (contains? @fxs %)) (keys fx)))
+        (log/report! :error (str "hammer: handler for " (pr-str (first ev)) " returned no known effect keys "
+                                 (pr-str (keys fx)) " - did it return db instead of {:db db}, or miss a reg-fx?")
+                     nil)
         :else (do (when (contains? fx :db) (set-db! (:db fx)))
                   (when-let [d (:dispatch fx)] (dispatch d))
                   (doseq [[k v] (dissoc fx :db :dispatch)] (run-fx! k v)))))))

@@ -6,7 +6,8 @@
             [hammer.events :as events]
             [hammer.dom :as dom]
             [hammer.testing :as t]
-            [hammer.core :refer [defc]])
+            [hammer.core :refer [defc]]
+            [hammer.test-util :refer [capture-errors]])
   (:require-macros [hammer.tpl-macros :refer [defboth]]))
 
 (use-fixtures :each {:before t/reset-app!})
@@ -332,14 +333,10 @@
 (deftest compiled-body-throw-keeps-dom
   (reset! state/app-db {:n 1})
   (let [el (container)
-        orig js/console.error
-        logs (atom [])]
-    (dom/mount! [boom] el)
-    (set! js/console.error (fn [& a] (swap! logs conj (vec (take 2 a)))))
-    (try (events/dispatch-sync [:set :n 2])
-         (finally (set! js/console.error orig)))
+        _ (dom/mount! [boom] el)
+        logs (capture-errors (fn [_] (events/dispatch-sync [:set :n 2])))]
     (is (= "<p title=\"1\">1</p>" (.-innerHTML el)))
-    (is (= [["hammer: render failed in" "boom"]] @logs))
+    (is (= ["hammer: render failed in boom"] (mapv first logs)))
     (events/dispatch-sync [:set :n 3])
     (is (= "<p title=\"3\">3</p>" (.-innerHTML el)))))
 
