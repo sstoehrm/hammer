@@ -82,8 +82,29 @@ keep plain data (a value reused twice must not be one DOM node).
 | anything else | `:derived` | runtime, at `create` | a named dep (prop or earlier binding) changed |
 
 Deps are the slot symbols that appear anywhere in the init form (by name, so a shadowing
-`let` counts too). A derived binding never tracks `app-db` or `@global`. Read the db
-through a path binding; bind a global atom itself (`g some-atom`) to get a watched `:local`.
+`let` counts too). A global atom deref'd as `@g` in the body or a binding init is
+**auto-bound** (`macros/auto-bind`, macro time): a hidden binding `g__autoN g` goes in
+front of the others (a watched `:local` when `g` is an atom, `:derived` otherwise) and
+that slot is added to the deps of the body or init that derefs `g`
+(`macros/deps-with`), so the component re-renders and dependent bindings recompute
+when `g` changes. **The code is emitted unchanged** and keeps reading `@g`; the pass
+only analyses it, so a wrong guess costs an extra watch, never a wrong value (the
+watch is on the atom `g` held at create; a later re-`def` of `g` is read, not
+watched). Only subtrees containing a deref are scanned. Binders are modeled on
+`let`/`let*`/`loop`/`when-let`/`if-let` (else branch outside)/…/`for`/`doseq` (with
+`:let`), `letfn` and `try`/`catch`; binding-free core macros (`when`, `cond`, `case`,
+`->`, `binding`, …) are scanned as written; any other macro is expanded for the scan
+only (so it runs twice: here, with the body's locals added to `&env`, and in the real
+compile; one that throws during the scan is scanned unexpanded). Destructuring is over-approximated (every symbol, and the names in
+`:keys`/`:syms`/`:strs`). Only plain user vars are auto-bound: not `js/…`,
+`cljs.core`, macros, fns (`:fn-var`) or dynamic vars. Not tracked: props and bindings
+(even ones bound later in the vector), locals, derefs inside `fn`/`#()` (render-time
+lambdas like `(map (fn …))` included), `quote`/`comment`, `@^:once g`, non-symbol
+targets, derefs in helper fns, and vars not yet defined where the component is
+(cljs warns "undeclared Var" there anyway). `@hammer.state/app-db` is never auto-bound (it would
+re-render on every db change): it emits the analyzer warning
+`:hammer.macros/app-db-deref` at the nearest enclosing form's line (bound on at the
+warning site, so plain cljs builds show it too unless set to `false`).
 
 `defdraw`/`defloop` (`hammer.canvas`, `hammer.gl`) share this same binding compilation
 (`hammer.macros`), so the same table applies to their `props`/`bindings`.
@@ -158,7 +179,7 @@ can't draw. On `webglcontextrestored` it calls `draw/queue!`, which requests a f
 | List items keep the wrong DOM | keyed diff needs **every** kid keyed, with unique keys; otherwise index diff (+ warn for duplicates, and in dev builds (`goog.DEBUG`) for a list mixing keyed and unkeyed kids) |
 | Input value "fights" typing | `:value/:checked/:selected` are compared to the live element, so the db must hold the current value |
 | `:ref` gets `nil` | called with `nil` on unmount; refs run after insertion into the document |
-| Body shows stale global/db state | the body re-runs only when a slot it names changes; a raw `@global` or `@app-db` in the body never triggers one. Bind it as a slot |
+| Body shows stale global/db state | the body re-runs only when a slot it names changes. `@global` written in the body or a binding init is auto-bound; one read inside any fn (render-time lambdas too) or a helper fn is not, so bind it (`[g some-atom]`). `@app-db` warns: use a path binding |
 | Extra empty text node in `childNodes` | a `nil` kid hole, or a hiccup-valued hole among siblings, keeps its (empty) text node; invisible to `innerHTML`/`children`/`:empty` |
 | Throw doesn't crash the app | binding init → nil slot; body throw → old DOM kept; the runner catches per instance. It is reported through `hammer.log/report!`: the console (or the `on-error!` reporter), and a throw from the next `testing/flush!` |
 | `:style {:backgroundColor …}` does nothing | style keys are CSS names (`:background-color`); dev builds warn. A string `:style` sets `cssText` |
