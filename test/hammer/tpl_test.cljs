@@ -477,11 +477,30 @@
 (deftest option-value-is-an-attribute
   (let [el (check! options options-plain [:c :v]
                    [{:c "a" :v "b"} {:c "b" :v "b"} {:c "b" :v "z"} {:c "a" :v nil}])]
-    (is (= ["a" nil] (mapv #(.getAttribute % "value") (.querySelectorAll el "option")))
-        "nil removes the attribute; the option's value is its text again"))
+    (is (= ["a" ""] (mapv #(.getAttribute % "value") (.querySelectorAll el "option")))
+        "nil writes value=\"\", as for an input, so a placeholder option keeps the empty value"))
   (reset! state/app-db {:c "b" :v "b"})
   (let [el (container)]
     (dom/mount! [options] el)
     (is (= "<select><option value=\"a\">a</option><option value=\"b\">b</option></select>" (.-innerHTML el))
         "written even when the value equals the text")
     (is (= "b" (.. el -firstChild -value)) "the select still picks it")))
+
+(defc nested-key [] [x [:x]] [:div [:span {:key x :title x} "a"]])
+
+(deftest nested-attrs-key-is-not-an-attribute
+  (reset! state/app-db {:x "7"})
+  (let [el (container)]
+    (dom/mount! [nested-key] el)
+    (is (= "<div><span title=\"7\">a</span></div>" (.-innerHTML el)))
+    (events/dispatch-sync [:set :x "8"])
+    (is (= "<div><span title=\"8\">a</span></div>" (.-innerHTML el)))))
+
+(defc placeholder [] [v [:v]] [:select {:value v} [:option {:value nil} "None"] [:option {:value "a"} "A"]])
+
+(deftest placeholder-option-keeps-the-empty-value
+  (reset! state/app-db {:v ""})
+  (let [el (container)]
+    (dom/mount! [placeholder] el)
+    (is (= "" (.. el -firstChild -value)))
+    (is (= 0 (.. el -firstChild -selectedIndex)))))

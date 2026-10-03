@@ -105,6 +105,12 @@
     (is (= 1 (count got))))
   (is (nil? (t/flush!))))
 
+(deftest check-errors-throws-without-a-flush
+  (t/reset-app!)
+  (silent #(ev/dispatch-sync [:log-test/unregistered-2]))
+  (is (thrown-with-msg? js/Error #"no event handler for :log-test/unregistered-2" (t/check-errors!)))
+  (is (nil? (t/check-errors!)) "taken"))
+
 (deftest unrelated-state-is-untouched
   (reset! state/app-db {:k 1})
   (t/expect-errors #(silent (fn [] (log/report! :error "hammer: x" nil))))

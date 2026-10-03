@@ -40,6 +40,9 @@ cases listed in the `hammer-app` skill (PR #23).
   - `(hammer.testing/expect-errors f)` runs `(f)` and returns the vector of
     entries collected during it (both levels); they are not left for `flush!`.
     Errors already pending when it is called stay pending.
+  - `hammer.testing/frame!` checks the same way after its draw frame.
+  - `(hammer.testing/check-errors!)` is that check on its own (for tests that only
+    use `dispatch-sync`, e.g. as an `:after` fixture).
   - `hammer.testing/reset-app!` also clears the collector.
 
 ## 2. Silent mistakes made visible
@@ -48,10 +51,10 @@ cases listed in the `hammer-app` skill (PR #23).
 |---|---|---|
 | 2 | handler returns `db` | A non-empty effect map with no `:db`, no `:dispatch` and no key registered with `reg-fx` logs one error, `hammer: handler for :id returned no known effect keys (:a :b) - did it return db instead of {:db db}, or miss a reg-fx?`, and runs nothing. (The same map is what a handler returns when its only fx was never registered, hence both hints.) Otherwise unchanged. |
 | 3 | `dispatch` on an fx id | `no event handler for :k` gets the hint `(:k is an fx: return {:k value} from an event handler)` when `:k` is registered with `reg-fx`. |
-| 4 | some list items unkeyed | When a kid list has both keyed and unkeyed items, warn `hammer: some list items have no key, falling back to index diff` (like the duplicate-key warning). A list with no keys stays silent. |
+| 4 | some list items unkeyed | In dev builds (`goog.DEBUG`), when a kid list has both keyed and unkeyed items, warn `hammer: some list items have no key, falling back to index diff` (like the duplicate-key warning). A list with no keys stays silent. |
 | 5 | `:key` in the attrs map | Honoured as the element's key (`^{:key}` metadata wins when both are given) and not written as an attribute, in `normalize` and in compiled templates. Components still take keys only from metadata. |
-| 6 | `:style` string / camelCase | A string `:style` is written to `style.cssText`; going from a string to a map clears `cssText` first. A map key containing an upper-case letter warns `hammer: :style keys are CSS names, got :backgroundColor` and is still passed to `setProperty` (which ignores it). |
-| 7 | `<option>` value | On an `option` element `:value` is written as the `value` attribute (compared with `getAttribute`; `nil` removes it), so the markup always has it. Other elements keep the property. |
+| 6 | `:style` string / camelCase | A string `:style` is written to `style.cssText`; going from a string to a map clears `cssText` first. In dev builds, a map key containing an upper-case letter warns `hammer: :style keys are CSS names, got :backgroundColor` and is still passed to `setProperty` (which ignores it). |
+| 7 | `<option>` value | On an `option` element `:value` is written as the `value` attribute (compared with `getAttribute`; `nil` writes `value=""`, as for an input), so the markup always has it. Other elements keep the property. |
 
 Out of scope: passing the element to `:on-*` fns (`currentTarget` is read-only).
 

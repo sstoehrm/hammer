@@ -67,8 +67,9 @@
               a? (map? (nth x 1 nil))
               attrs (if a? (nth x 1) {})
               ;; :key in attrs is the element's key (metadata wins), never an attribute
-              k (if (and (nil? k) a?) (:key attrs) k)
-              attrs (if (and a? (contains? attrs :key)) (dissoc attrs :key) attrs)
+              ak (when a? (:key attrs))
+              k (if (nil? k) ak k)
+              attrs (if (some? ak) (dissoc attrs :key) attrs)
               c (class-str (:class attrs))
               c (if cls (if c (str cls " " c) cls) c)
               attrs (cond-> attrs id (assoc :id id) c (assoc :class c))]
@@ -133,7 +134,7 @@
         (doseq [[sk sv] v]
           (when (not= sv (get old sk))
             (let [n (name sk)]
-              (when (and (re-find #"[A-Z]" n) (not (str/starts-with? n "--")))
+              (when (and ^boolean goog/DEBUG (re-find #"[A-Z]" n) (not (str/starts-with? n "--")))
                 (log/report! :warn (str "hammer: :style keys are CSS names, got " (pr-str sk)) nil))
               (.setProperty s n (str sv)))))
         (doseq [[sk _] old]
@@ -145,9 +146,8 @@
   (if (and (= n "value") (= "OPTION" (.-tagName el)))
     ;; an option's value property reads its text when the attribute is
     ;; missing, so compare and write the attribute: the markup always has it
-    (cond
-      (nil? v) (.removeAttribute el "value")
-      (not= (str v) (.getAttribute el "value")) (.setAttribute el "value" (str v)))
+    (let [v (str (or v ""))]
+      (when (not= v (.getAttribute el "value")) (.setAttribute el "value" v)))
     (let [v (if (= n "value") (str (or v "")) (boolean v))]
       (when (not= v (gobj/get el n)) (gobj/set el n v)))))
 
@@ -487,7 +487,7 @@
         key-at (fn [i] (.-key ^VNode (aget kids i)))
         dup (fn [] (log/report! :warn "hammer: duplicate keys, falling back to index diff" nil))
         unkeyed (fn [] (log/report! :warn "hammer: some list items have no key, falling back to index diff" nil))
-        _ (when (and (pos? n) (nil? (key-at 0))
+        _ (when (and ^boolean goog/DEBUG (pos? n) (nil? (key-at 0))
                      (loop [i 1] (and (< i n) (or (some? (key-at i)) (recur (inc i))))))
             (unkeyed))
         m (when (and (pos? n) (some? (key-at 0)))

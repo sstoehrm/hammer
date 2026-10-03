@@ -20,6 +20,12 @@
          :util {:name "test-util capture-*"
                 :type "changed"
                 :note "capture-errors/capture-warnings wrap expect-errors so deliberate errors don't leak into a later flush!"}
+         :check {:name "testing/check-errors!"
+                 :type "new"
+                 :note "the check on its own: throws ex-info listing collected :error entries; flush! and frame! end with it"}
+         :frame {:name "testing/frame!"
+                 :type "changed"
+                 :note "checks after its draw frame too"}
          :reset {:name "testing/reset-app!"
                  :type "changed"
                  :note "also clears the collector"}
@@ -32,10 +38,12 @@
          [:log :collector] {:direction :-> :name "when active"}
          [:log :reporter] {:direction :->}
          [:on-error :reporter] {:direction :-> :name "replaces"}
-         [:flush :collector] {:direction :-> :name "drains, throws on :error"}
+         [:flush :check] {:direction :->}
+         [:frame :check] {:direction :->}
+         [:check :collector] {:direction :-> :name "drains, throws on :error"}
          [:expect :collector] {:direction :-> :name "drains"}
          [:reset :collector] {:direction :-> :name "clears"}
          [:util :expect] {:direction :->}}
  :boxes {:sites {:name "hammer: call sites (~30)" :type "zone" :components #{:events :render :draw}}
          :core {:name "hammer.log" :type "zone" :components #{:log :reporter :collector}}
-         :testing {:name "hammer.testing" :type "zone" :components #{:flush :expect :reset}}}}
+         :testing {:name "hammer.testing" :type "zone" :components #{:flush :frame :check :expect :reset}}}}

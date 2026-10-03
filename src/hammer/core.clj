@@ -110,6 +110,8 @@
                             [st (conj hs {:kind kind :name nm :path path :sym h})]))]
                (vswap! plain-attrs assoc k x)
                (cond
+                 ;; a key, never an attribute (compile-el lifts the root's; a nested one has no siblings to match)
+                 (= k :key) [st hs]
                  (= k :ref) (if (nil? x) [st hs] (hole 7 nil))
                  (str/starts-with? n "on-") (if (nil? x) [st hs] (hole 6 (subs n 3)))
                  (#{:value :checked :selected} k) (hole 5 n)

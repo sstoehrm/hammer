@@ -34,7 +34,8 @@ and `nil` on removal, so write it as `#(some-> % .focus)` rather than assuming a
 non-nil element. Handlers run from one capture-phase listener per event type on
 the `mount!` container, so `(.-currentTarget e)` is that container; use
 `(.-target e)` or close over what you need. `:class` string or collection;
-`:style` map of CSS property names (`:background-color`) or a CSS string. SVG is
+`:style` map of CSS property names (`:background-color`; dev builds warn on
+`:backgroundColor`) or a CSS string. SVG is
 not supported in v1 — elements are created with `createElement`.
 
 Errors: hammer does not throw for a failing handler, fx, render or draw, or for
@@ -87,6 +88,9 @@ running app already has, instead of resetting it.
   `hammer.testing` turns this on, whatever `on-error!` is set to.
 - `(expect-errors f)` — runs `(f)` and returns the reports made during it
   instead of letting them fail `flush!`; for tests of error behaviour.
+- `(check-errors!)` — the same check on its own; `frame!` runs it after its
+  draw frame. Use it (e.g. as an `:after` fixture) in tests that only call
+  `dispatch-sync`, which never throws for a reported error.
 - `(renders c)` / `(reset-renders! & cs)` — a component's render count since
   the last reset; use to assert that only the expected components re-rendered.
 - `(reset-app!)` — unmounts every root, empties `app-db` and drops unchecked

@@ -121,3 +121,12 @@
   (events/dispatch [::set :sz [10 10]])
   (t/frame! 2000)
   (is (= [[:sized 16 0 3]] @seen) "back from 0x0: t and n continue, dt restarts at 0"))
+
+(defdraw broken-draw [] [] {:size [10 10]} (fn [_ _] (throw (js/Error. "x"))))
+
+(deftest frame-throws-on-errors-from-its-own-frame
+  (cv/mount! [broken-draw] (div))
+  (cv/on-error! (fn [_]))
+  (try
+    (is (thrown-with-msg? js/Error #"draw failed in broken-draw" (t/frame! 0)))
+    (finally (cv/on-error! nil))))

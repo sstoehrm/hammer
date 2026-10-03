@@ -12,9 +12,11 @@
 (defonce ^:private collecting (log/collect!))
 (defonce ^:private expecting (volatile! 0))
 
-(defn- throw-reported!
-  "Throws ex-info {:errors [...]} when :error reports were collected since the
-  last check; warnings are dropped. Not inside expect-errors."
+(defn check-errors!
+  "Throws ex-info {:errors [...]} when hammer reported an :error since the
+  last check (flush!, frame! and this check); warnings are dropped. Does
+  nothing inside expect-errors. flush! and frame! call it; call it yourself,
+  e.g. as an :after fixture, in tests that only use dispatch-sync."
   []
   (when (zero? @expecting)
     (let [errs (filterv #(keyword-identical? :error (:level %)) (log/take!))]
@@ -34,11 +36,13 @@
       (sched/flush!)
       (events/drain!)
       (recur (inc n))))
-  (throw-reported!))
+  (check-errors!))
 
 (defn expect-errors
   "Runs (f) and returns the reports made during it, [{:level :message :error}],
-  instead of letting them fail flush!. Reports pending before the call stay."
+  instead of letting them fail flush!. Reports pending before the call stay.
+  Nested inside another expect-errors, the inner call takes its reports: the
+  outer one does not see them."
   [f]
   (vswap! expecting inc)
   (try
@@ -69,7 +73,9 @@
   (draw/set-raf! (fn [_] nil)))
 
 (defn frame!
-  "Flushes pending events and updates, then runs one draw frame at time ms."
+  "Flushes pending events and updates, then runs one draw frame at time ms.
+  Throws like flush! when hammer reported an error, the frame's included."
   [ms]
   (flush!)
-  (draw/frame! ms))
+  (draw/frame! ms)
+  (check-errors!))
