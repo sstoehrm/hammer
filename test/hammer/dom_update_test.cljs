@@ -6,7 +6,7 @@
             [hammer.dom :as dom]
             [hammer.testing :as t]
             [hammer.core :refer [defc]]
-            [hammer.test-util :refer [capture-errors]]))
+            [hammer.test-util :refer [capture-errors capture-warnings]]))
 
 (use-fixtures :each {:before t/reset-app!})
 
@@ -474,3 +474,44 @@
     (dotimes [_ 200]
       (let [xs (->> (range 20) (filter (fn [_] (< (rnd 10) 6))) shuffle*)]
         (keyed-step! ul xs)))))
+
+;; ---- a list with keyed and unkeyed items warns (it falls back to index diff)
+
+(defc mixed-keys [] [ks [:ks]]
+  [:ul (for [k ks] (if (= k 2) [:li k] ^{:key k} [:li k]))])
+
+(defc head-and-keyed [] [ks [:ks]]
+  [:ul [:li "head"] (for [k ks] ^{:key k} [:li k])])
+
+(deftest partly-keyed-list-warns
+  (reset! state/app-db {:ks [1 2 3]})
+  (let [el (container)
+        _ (dom/mount! [mixed-keys] el)
+        warns (capture-warnings (fn [_] (events/dispatch-sync [:set :ks [3 2 1]])))]
+    (is (= ["hammer: some list items have no key, falling back to index diff"] (mapv first warns)))
+    (is (= "<ul><li>3</li><li>2</li><li>1</li></ul>" (.-innerHTML el)))))
+
+(deftest partly-keyed-list-warns-when-the-first-item-has-no-key
+  (reset! state/app-db {:ks [2 1 3]})
+  (let [el (container)
+        _ (dom/mount! [mixed-keys] el)
+        warns (capture-warnings (fn [_] (events/dispatch-sync [:set :ks [2 3 1]])))]
+    (is (= 1 (count warns)))))
+
+(deftest static-head-before-a-keyed-for-does-not-warn
+  (reset! state/app-db {:ks [1 2]})
+  (let [el (container)
+        _ (dom/mount! [head-and-keyed] el)
+        warns (capture-warnings (fn [_] (events/dispatch-sync [:set :ks [2 1]])))]
+    (is (= [] warns) "the for is its own list in the compiled template")
+    (is (= "<ul><li>head</li><li>2</li><li>1</li></ul>" (.-innerHTML el)))))
+
+(defc plain-list [] [ks [:ks]] [:ul (for [k ks] [:li k])])
+
+(deftest unkeyed-list-stays-silent
+  (reset! state/app-db {:ks [1 2]})
+  (let [el (container)
+        _ (dom/mount! [plain-list] el)
+        warns (capture-warnings (fn [_] (events/dispatch-sync [:set :ks [2 1 3]])))]
+    (is (= [] warns))
+    (is (= "<ul><li>2</li><li>1</li><li>3</li></ul>" (.-innerHTML el)))))

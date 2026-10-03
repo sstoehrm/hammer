@@ -459,14 +459,18 @@
 
 (defn- key-index
   "key → index when every kid is keyed and keys are unique, else nil (warns on
-  a duplicate): a js/Map when every key is a number or string (the same
-  value semantics as =), else a persistent map. The verdict is kept on the
-  array, so when these kids become the old side of the next patch they are
-  not checked again."
+  a duplicate, or when only some kids are keyed): a js/Map when every key is
+  a number or string (the same value semantics as =), else a persistent map.
+  The verdict is kept on the array, so when these kids become the old side of
+  the next patch they are not checked again."
   [^js kids]
   (let [n (alength kids)
         key-at (fn [i] (.-key ^VNode (aget kids i)))
         dup (fn [] (log/report! :warn "hammer: duplicate keys, falling back to index diff" nil))
+        unkeyed (fn [] (log/report! :warn "hammer: some list items have no key, falling back to index diff" nil))
+        _ (when (and (pos? n) (nil? (key-at 0))
+                     (loop [i 1] (and (< i n) (or (some? (key-at i)) (recur (inc i))))))
+            (unkeyed))
         m (when (and (pos? n) (some? (key-at 0)))
             (if (loop [i 0] (or (== i n) (and (js-key? (key-at i)) (recur (inc i)))))
               (let [m (js/Map.)]
@@ -479,7 +483,7 @@
                 (if (< i n)
                   (let [k (key-at i)]
                     (cond
-                      (nil? k) nil
+                      (nil? k) (unkeyed)
                       (contains? m k) (dup)
                       :else (recur (inc i) (assoc! m k i))))
                   m))))]
