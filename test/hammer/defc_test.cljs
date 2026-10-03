@@ -49,3 +49,16 @@
   (is (= "defc: duplicate prop or binding name"
          (expand-error (hammer.core/defc bad [a] [a 1] nil))))
   (is (nil? (expand-error (hammer.core/defc ok [a] [b 1] nil)))))
+
+(deftest missing-bindings-vector-is-named
+  (is (= "defc page: missing bindings vector, write (defc page [] [] body)"
+         (expand-error (hammer.core/defc page [] [:ul [:li "a"]]))))
+  (is (= "defc row: missing bindings vector, write (defc row [id] [] body)"
+         (expand-error (hammer.core/defc row [id] (str id)))))
+  (is (= "defdraw chart: missing bindings vector, write (defdraw chart [] [] body)"
+         (expand-error (hammer.canvas/defdraw chart [] {:size [1 1]} (fn [_ _])))))
+  (is (= "defc row: missing bindings vector, write (defc row [id] [] body)"
+         (expand-error (hammer.core/defc row [id] [child id])))
+      "a component vector with an even count would parse as bindings and leave no body")
+  (is (= "defc page: missing props and bindings vectors, write (defc page [] [] body)"
+         (expand-error (hammer.core/defc page [:ul [:li "a"]])))))

@@ -50,6 +50,16 @@
 (defn check-slots!
   "The binding checks shared by every component macro; messages start with macro."
   [macro cname props bindings]
+  ;; the bindings vector is required even when empty; a body in its place
+  ;; would otherwise surface as a confusing slot error, or compile to nothing
+  (when (or (not (vector? props)) (keyword? (first props)))
+    (throw (ex-info (str macro " " cname ": missing props and bindings vectors, write ("
+                         macro " " cname " [] [] body)")
+                    {:name cname})))
+  (when (or (not (vector? bindings)) (keyword? (first bindings)))
+    (throw (ex-info (str macro " " cname ": missing bindings vector, write ("
+                         macro " " cname " " (pr-str props) " [] body)")
+                    {:name cname})))
   (let [slots (into (vec props) (map first (partition 2 bindings)))]
     (when (odd? (count bindings))
       (throw (ex-info (str macro ": bindings need an even number of forms") {:name cname})))
