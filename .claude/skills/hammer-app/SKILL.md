@@ -1,6 +1,6 @@
 ---
 name: hammer-app
-description: Use when writing a web app UI with the hammer ClojureScript library (hammer.core) — setup, components, db paths, events, effects, DOM attributes, forms and inputs, event handlers, routing, keyed lists, mounting, errors.
+description: Use when writing a web app UI with the hammer ClojureScript library (hammer.core) — setup, components, db paths, events, effects, DOM attributes, forms and inputs, event handlers, routing, keyed lists, mounting, errors, testing.
 ---
 
 # hammer for app authors
@@ -9,7 +9,8 @@ re-frame-style events without React or subscriptions. A component names the
 app-db paths it reads and re-renders only when one of them changes.
 
 This sheet covers hammer's whole public API (`defc`, `is?`, `reg-event`,
-`reg-fx`, `dispatch`, `dispatch-sync`, `mount!`) and every DOM behaviour an
+`reg-fx`, `dispatch`, `dispatch-sync`, `mount!`, `on-error!`, and `hammer.testing`)
+and every DOM behaviour an
 app depends on. Everything below was checked against hammer's source and in a
 browser, so you should not need to read hammer's source.
 
@@ -58,6 +59,8 @@ browser, so you should not need to read hammer's source.
   `@some-atom` in the body never triggers a render: bind it instead.
 - Use a component as `[comp arg1 arg2]` in hiccup. Its args are compared with
   `=`; an inline `fn` arg is never `=`, so the child re-renders every time.
+- The props and bindings vectors are both required: a missing one is a compile
+  error (`defc page: missing bindings vector, write (defc page [] [] body)`).
 
 ## Events and effects
 
@@ -66,10 +69,12 @@ browser, so you should not need to read hammer's source.
 - It must return an effect map: `{:db new-db}`, plus optionally `:dispatch [ev]`
   (one event) and any `reg-fx` key. `:db` is applied first, then `:dispatch`,
   then the other keys. Returning `nil` does nothing. Returning the db itself
-  runs every top-level db key as an effect: always wrap it in `{:db …}`.
+  (no `:db`, `:dispatch` or registered fx key) runs nothing and reports
+  "handler for :id returned no known effect keys (…)": wrap it in `{:db …}`.
+  A key with no `reg-fx` reports "no fx registered for :k".
 - `(reg-fx :k (fn [value] ...))` registers side effects for key `:k` in an effect
-  map. An fx is not an event: `(dispatch [:k])` on an fx id fails with
-  "no event handler for :k".
+  map. An fx is not an event: `(dispatch [:k])` on an fx id reports
+  "no event handler for :k (:k is an fx: return {:k value} from an event handler)".
 - `(dispatch [:id & args])` queues an event (microtask) and works from
   anywhere: handlers, promise callbacks, `js/window` listeners, timers.
   `dispatch-sync` runs it and renders now, and throws inside a handler.
@@ -93,14 +98,16 @@ browser, so you should not need to read hammer's source.
   `:data-testid`, `:aria-label`, `:type`, `:href`.
 - Children: strings and numbers render as text, `nil` and `false` render
   nothing, a seq (`for`, `map`) is spliced in.
-- Attribute values: `nil`/`false` remove the attribute, `true` writes an
-  **empty** attribute (`:disabled true` → `disabled=""`, `:disabled false` →
-  no attribute), anything else is written with `str`. Enumerated attributes
-  need strings: `:draggable "true"`, not `true`.
-- `:style` must be a map with CSS property names: `{:width (str pct "%")
-  :background-color "red"}`, not `:backgroundColor`; a style string does not
-  work. Values are written with `str`; a key missing in the next render is
-  removed.
+- Attribute values: `nil` removes the attribute; `true`/`false` add an
+  **empty** attribute or remove it (`:disabled true` → `disabled=""`,
+  `:disabled false` → no attribute), except `draggable`, `spellcheck`,
+  `contenteditable`, `writingsuggestions` and every `aria-*`, which get the
+  strings `"true"`/`"false"` (`:aria-expanded false` → `aria-expanded="false"`).
+  Anything else is written with `str`.
+- `:style` is a map with CSS property names, `{:width (str pct "%")
+  :background-color "red"}` (dev builds warn on `:backgroundColor`), or a CSS
+  string, `"color: red"`. Map values are written with `str`; a key missing in
+  the next render is removed.
 - `:ref` gets the element after insertion and `nil` on removal:
   `:ref #(some-> % .focus)`.
 
@@ -112,12 +119,8 @@ browser, so you should not need to read hammer's source.
 - Checkbox: `[:input {:type "checkbox" :checked done? :on-change #(dispatch [:toggle id])}]`.
 - `<select>`: `[:select {:value picked :on-change #(dispatch [:pick (.. % -target -value)])} …]`
   selects the right option; the options are created before the value is set.
-- `<option>` **quirk**: `[:option {:value "a"} "a"]` writes no `value`
-  attribute when the value equals the text (the property already reads "a", so
-  hammer skips the write). Selecting still works, but the DOM shows
-  `<option>a</option>`. When the markup must contain `value="…"`, use a
-  string key: `[:option {"value" "a"} "a"]` (that element is rendered as plain
-  data, same result). A value that differs from the text is always written.
+- `[:option {:value "a"} "a"]` always writes `value="a"`; `{:value nil}` writes
+  `value=""` (a "none" placeholder option).
 - Form submit: `[:form {:on-submit #(do (.preventDefault %) (dispatch [:save]))} …]`.
 - File input: `:on-change #(-> (.. % -target -files) (aget 0) (.text) (.then (fn [t] (dispatch [:csv t]))))`.
 
@@ -126,10 +129,12 @@ browser, so you should not need to read hammer's source.
 - An event vector is dispatched **exactly as written**; nothing from the DOM
   event is appended. `:on-click [:delete id]` is fine; anything that needs the
   DOM event or the input's value needs a fn.
-- A fn gets the DOM event. Handlers are delegated from the mount container, so
-  `(.-currentTarget e)` is the container; use `(.-target e)` or close over
-  what you need. `(.preventDefault e)` and `(.stopPropagation e)` work.
-- Drag and drop: `:draggable "true"`, and call `(.preventDefault e)` in
+- A fn is called with the DOM event and the element the handler is on:
+  `(fn [e el] …)`; `(fn [e] …)` and `#(…)` work too, but a multi-arity fn needs
+  a 2-arity. Handlers are delegated from the mount container, so
+  `(.-currentTarget e)` is the container, not the element: use `el`.
+  `(.preventDefault e)` and `(.stopPropagation e)` work.
+- Drag and drop: `:draggable true`, and call `(.preventDefault e)` in
   `:on-dragover` so `:on-drop` fires.
 
 ## Routing
@@ -153,9 +158,12 @@ The server must answer such paths with the same `index.html`.
 
 ## Lists
 
-Key list items with metadata: `^{:key id} [row id]` or `^{:key id} [:li …]`.
-Keys must be on every item and unique; otherwise hammer falls back to index
-diffing and warns in the console. `:key` in the attrs map is not a key.
+Key list items with metadata, `^{:key id} [row id]` or `^{:key id} [:li …]`, or,
+for an element, with `:key` in its attrs: `[:li {:key id} …]` (not written as an
+attribute; metadata wins). A component vector takes only the metadata form. Keys
+must be on every item and unique; otherwise hammer falls back to index diffing
+and warns (duplicates always, a list mixing keyed and unkeyed items in dev
+builds).
 
 ## Mounting
 
@@ -165,9 +173,47 @@ changes re-render the affected components by themselves.
 
 ## Where mistakes show up
 
-hammer never throws for these; it logs to the **browser console** with the
-prefix `hammer:` and keeps the old DOM:
-"no event handler for :x", "no fx registered for :k — did the handler return db
-instead of {:db db}?", "handler must return an effect map", "event handler
-failed", "fx failed", "update failed in <component>", "duplicate keys". Check
-the browser console first when the UI does not react.
+hammer never throws for a failing handler, fx or render, or for a mistake like
+a missing handler: it reports it and keeps the old DOM. Reports go to the
+**browser console** (`hammer: …`) unless the app replaced the reporter:
+
+```clojure
+(on-error! (fn [{:keys [level message error]}] ...))   ; level :error or :warn
+(on-error! nil)                                         ; back to the console
+```
+
+Messages: "no event handler for :x", "no fx registered for :k", "handler for :x
+returned no known effect keys (…) - did it return db instead of {:db db}, or miss
+a reg-fx?", "handler must return an effect map", "event must be a vector",
+"event handler failed [:x …]", "fx failed :k", "render failed in <component>",
+"update failed in <component>", ":ref failed", "duplicate keys", "some list items
+have no key". Check the console first when the UI does not react; in tests,
+hammer.testing makes them fail the test (below).
+
+## Testing
+
+`hammer.testing` (node or browser tests, e.g. shadow-cljs `:node-test` with jsdom):
+
+- `(t/reset-app!)` as a `:before` fixture: unmounts every root, empties the db.
+- `(t/flush!)` runs queued events and renders synchronously, then **throws** if
+  hammer reported an error since the last check (`ex-data` has `:errors`).
+  `dispatch-sync` alone never throws for a report: end such tests with
+  `(t/check-errors!)`, or use it as an `:after` fixture.
+- `(t/expect-errors f)` runs `f` and returns the reports
+  (`[{:level :message :error}]`) instead of failing; for testing error paths.
+- `(t/renders comp)` / `(t/reset-renders! comp)`: render counts, to check that
+  only the expected components re-rendered.
+- Handlers and fxs are global and `reset-app!` keeps them: in tests that
+  register their own, use namespaced ids (`::add`) so test namespaces can't
+  overwrite each other's.
+
+```clojure
+;; (:require [cljs.test :refer [deftest is use-fixtures]] [hammer.testing :as t] …)
+(use-fixtures :each {:before t/reset-app!})
+(deftest add-todo
+  (let [el (js/document.createElement "div")]
+    (mount! [page] el {:todos []})
+    (dispatch [:add "milk"])
+    (t/flush!)
+    (is (= "milk" (.-textContent (.querySelector el "li"))))))
+```
