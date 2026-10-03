@@ -1,3 +1,5 @@
+<img src="assets/hammer.svg" alt="" width="96" height="96">
+
 # hammer
 
 If all you have is a hammer, everything looks like a nail. This hammer is a
@@ -45,6 +47,18 @@ No clue. Use with caution.
 
 - [docs/develop-with-a-hammer.md](docs/develop-with-a-hammer.md): setup, API,
   testing, canvas, and working on hammer itself.
+
+## TODO
+
+- [ ] First release: tag `v0.1.0` (GitHub release with the jar, and Clojars).
+- [ ] A built-in HTTP effect (`fetch`-based `:http`), so apps don't each write one.
+- [ ] SVG: elements are created with `createElement`, so `<svg>` content does not
+  render yet.
+- [ ] Canvas components' `:attrs` follow the DOM attribute rules (booleans,
+  `aria-*`).
+- [ ] Warn when an `:on-*` handler is a keyword, set or map (ignored today).
+- [ ] Track global atoms deref'd in helper functions, not only in the component.
+- [ ] 3D on top of `hammer.gl`: meshes, cameras, materials, a scene graph.
 
 ## Special thanks
 

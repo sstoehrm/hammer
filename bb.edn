@@ -23,6 +23,18 @@
            (spit "target/tokens/hammer.cljs" ours)
            (shell "node scripts/count-tokens.cjs target/tokens/re-frame.cljs target/tokens/hammer.cljs"))}
 
+  jar
+  {:doc "Release jar: bb jar 0.1.0 (or v0.1.0) → target/hammer-0.1.0.jar"
+   :task (shell "clojure -T:build jar :version" (pr-str (first *command-line-args*)))}
+
+  release:check
+  {:doc "Fails unless the tag (v0.1.0) is a plain semver version"
+   :task (let [t (first *command-line-args*)]
+           (when-not (and t (re-matches (re-pattern "v\\d+\\.\\d+\\.\\d+(-[\\w.]+)?") t))
+             (binding [*out* *err*] (println "release:check: tag must look like v0.1.0, got" (pr-str t)))
+             (System/exit 1))
+           (println "release:check: ok" t))}
+
   loc
   {:doc "Non-blank, non-comment lines in src/hammer"
    :task (let [n (->> (fs/glob "src/hammer" "*.{clj,cljs}")

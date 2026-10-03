@@ -1,1 +1,7 @@
-{:paths ["src"]}
+{:paths ["src"]
+ :aliases
+ {;; clojure -T:build jar :version '"0.1.0"'   (bb jar 0.1.0)
+  ;; clojure -T:build deploy :version '"0.1.0"' (needs CLOJARS_USERNAME / CLOJARS_PASSWORD)
+  :build {:deps {io.github.clojure/tools.build {:mvn/version "0.10.9"}
+                 slipset/deps-deploy {:mvn/version "0.2.5"}}
+          :ns-default build}}}

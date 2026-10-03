@@ -270,5 +270,18 @@ as a `:local/root` dep (`cd examples/counter && clj -M:dev` → http://localhost
 | `bb tokens` | TodoMVC token count, hammer vs re-frame |
 | `bb bench-canvas` | the canvas benchmark ([bench/canvas](../bench/canvas/README.md)) |
 
+CI (`.github/workflows/ci.yml`) runs the tests, `bb sizes`, the release builds
+and a jar build on every push to `main` and every pull request.
+
+**Releasing:** tag a version and push the tag:
+
+    git tag v0.1.0 && git push origin v0.1.0
+
+`.github/workflows/release.yml` then checks the tag, runs the tests, builds
+`target/hammer-0.1.0.jar` and creates a GitHub release with the jar attached.
+When the repository secrets `CLOJARS_USERNAME` and `CLOJARS_PASSWORD` (a Clojars
+deploy token) are set, it also deploys `io.github.sstoehrm/hammer` to Clojars.
+Locally: `bb jar 0.1.0`, or `clojure -T:build deploy :version '"0.1.0"'`.
+
 The repository-local `hammer-internals` skill (`.claude/skills/`) explains the
 internals to an agent working on hammer itself.
