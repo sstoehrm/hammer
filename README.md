@@ -60,10 +60,14 @@ dynamic parts. Hiccup built by other functions, passed as a prop or given to
 
 A global atom deref'd in a component, `[:span (count @cart)]`, is tracked: the
 component re-renders when `cart` changes, as if you had bound it (`[c cart]`, then
-`@c`). This covers the body and binding inits, not helper functions the body calls
-(bind the atom for those), and not derefs inside event handlers, which run later.
-`@^:once config` reads without tracking. `@app-db` warns at compile time: read the
-db through path bindings instead.
+`@c`); the atom is captured when the instance is created. This covers `@g` written
+in the body and binding inits, where `g` is a var of your own. Not covered, so bind
+the atom yourself (`[c cart]`): derefs inside any `fn`/`#(…)`, including render-time
+ones like `(map (fn [x] … @cart …) xs)` (event handlers run later anyway), derefs in
+helper functions the body calls, and `(deref (f))`. `@^:once config` reads without
+tracking. `@app-db` warns at compile time: read the db through path bindings. For
+per-row state such as a selection, prefer `(is? [:selected] id)` over a global atom:
+every row that derefs the atom re-renders when it changes.
 
 An `(atom ...)` binding is created once per instance and does not follow later
 prop changes. A vector literal binding is always a path; use `(vector a b)` for

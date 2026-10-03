@@ -84,15 +84,22 @@ keep plain data (a value reused twice must not be one DOM node).
 Deps are the slot symbols that appear anywhere in the init form (by name, so a shadowing
 `let` counts too). A global atom deref'd as `@g` in the body or a binding init is
 **auto-bound** (`macros/auto-bind`, macro time): a hidden binding `g__autoN g` goes in
-front of the others (a watched `:local` when `g` is an atom, `:derived` otherwise) and
-`@g` is rewritten to deref it, so the component re-renders and dependent bindings
-recompute when `g` changes. Only a plain symbol that resolves to a var
-(`cljs.analyzer.api/resolve`) at that point counts; props, bindings, locals bound
-inside the form (`let`/`loop`/`for`/`doseq`/…, over-approximated), derefs inside
-`fn`/`#()`/`letfn` (event and draw time) and `@^:once g` are left alone.
-`@hammer.state/app-db` is never auto-bound (it would re-render on every db change):
-it emits the analyzer warning `:hammer.macros/app-db-deref` instead. A deref inside a
-helper fn the body calls is not seen. Read the db through a path binding.
+front of the others (a watched `:local` when `g` is an atom, `:derived` otherwise;
+captured at create, so a later re-`def`/`set!` of `g` is not followed) and `@g` is
+rewritten to deref it, so the component re-renders and dependent bindings recompute
+when `g` changes. Only subtrees containing a deref are walked. Binders are modeled on
+`let`/`let*`/`loop`/`when-let`/…/`for`/`doseq` (with `:let`), `letfn` (body walked,
+fn bodies not) and `try`/`catch`; the core macros compile-pos needs (`when`, `cond`,
+`case`, `->`, …) are walked as written; **any other macro is expanded**
+(`cljs.analyzer/macroexpand-1`) and its expansion walked, so a local bound by any macro
+is a local. Destructuring is over-approximated (every symbol, and the name of every
+keyword or qualified symbol). Only plain user vars are auto-bound: not `js/…`,
+`cljs.core`, macros, fns (`:fn-var`) or dynamic vars. Left alone: props and bindings
+(even ones bound later in the vector), locals, derefs inside `fn`/`#()` (render-time
+lambdas like `(map (fn …))` included), `@^:once g`, non-symbol targets, and derefs in
+helper fns. `@hammer.state/app-db` is never auto-bound (it would re-render on every
+db change): it emits the analyzer warning `:hammer.macros/app-db-deref` at the
+nearest enclosing form's line (enabled in `cljs.analyzer/*cljs-warnings*` too).
 
 `defdraw`/`defloop` (`hammer.canvas`, `hammer.gl`) share this same binding compilation
 (`hammer.macros`), so the same table applies to their `props`/`bindings`.
@@ -167,7 +174,7 @@ can't draw. On `webglcontextrestored` it calls `draw/queue!`, which requests a f
 | List items keep the wrong DOM | keyed diff needs **every** kid keyed, with unique keys; otherwise index diff (+ warn for duplicates, and in dev builds (`goog.DEBUG`) for a list mixing keyed and unkeyed kids) |
 | Input value "fights" typing | `:value/:checked/:selected` are compared to the live element, so the db must hold the current value |
 | `:ref` gets `nil` | called with `nil` on unmount; refs run after insertion into the document |
-| Body shows stale global/db state | the body re-runs only when a slot it names changes. `@global` written in the body or a binding init is auto-bound; one read inside a helper fn is not, so bind it (`[g some-atom]`). `@app-db` warns: use a path binding |
+| Body shows stale global/db state | the body re-runs only when a slot it names changes. `@global` written in the body or a binding init is auto-bound; one read inside any fn (render-time lambdas too) or a helper fn is not, so bind it (`[g some-atom]`). `@app-db` warns: use a path binding |
 | Extra empty text node in `childNodes` | a `nil` kid hole, or a hiccup-valued hole among siblings, keeps its (empty) text node; invisible to `innerHTML`/`children`/`:empty` |
 | Throw doesn't crash the app | binding init → nil slot; body throw → old DOM kept; the runner catches per instance. It is reported through `hammer.log/report!`: the console (or the `on-error!` reporter), and a throw from the next `testing/flush!` |
 | `:style {:backgroundColor …}` does nothing | style keys are CSS names (`:background-color`); dev builds warn. A string `:style` sets `cssText` |

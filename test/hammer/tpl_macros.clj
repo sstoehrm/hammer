@@ -7,3 +7,8 @@
   [name args body]
   `(do (hammer.core/defc ~name [] [~@(mapcat (fn [a] [a [(keyword a)]]) args)] ~body)
        (defn ~(symbol (str name "-plain")) [~@args] ~body)))
+
+(defmacro with-local
+  "A user macro that binds a local through let, for auto-bind tests."
+  [[sym init] & body]
+  `(let [~sym ~init] ~@body))
