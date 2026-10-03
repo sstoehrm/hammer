@@ -1,0 +1,15 @@
+{
+  "name": "hammer",
+  "description": "hammer ClojureScript UI library — skill for building apps with it",
+  "owner": {
+    "name": "Sören Stöhrmann",
+    "url": "https://github.com/sstoehrm"
+  },
+  "plugins": [
+    {
+      "name": "hammer-app",
+      "source": "./plugins/hammer-app",
+      "description": "Teaches Claude hammer's public API and DOM behaviour for writing app UIs: components, db paths, events, effects, forms, lists, errors and testing"
+    }
+  ]
+}

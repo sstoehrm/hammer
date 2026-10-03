@@ -1,6 +1,6 @@
 ---
 name: hammer-internals
-description: Use when reading, modifying, debugging, or building apps with the hammer ClojureScript UI framework (src/hammer) — components re-rendering too often or not at all, defc binding kinds (path, atom, derived), event handlers and effects, render order, keyed lists, defdraw/defloop canvas or WebGL2 draw components, or changing dom/cells/trie/scheduler/draw/canvas/gl code.
+description: Use when working on hammer itself in this repository (src/hammer, its tests, benchmarks and examples) — reading, modifying or debugging the dom/cells/trie/scheduler/events/draw/canvas/gl/macros code, the update pipeline, compiled templates, binding kinds, keyed diff, or defdraw/defloop internals. For building an app with hammer, use the hammer-app plugin skill instead.
 ---
 
 # hammer internals

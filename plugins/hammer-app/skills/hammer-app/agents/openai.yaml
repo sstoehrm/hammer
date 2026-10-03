@@ -1,0 +1,4 @@
+interface:
+  display_name: "hammer app"
+  short_description: "Build web app UIs with hammer"
+  default_prompt: "Use $hammer-app to build or change this hammer app UI."

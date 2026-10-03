@@ -1,0 +1,26 @@
+{
+  "name": "hammer-app",
+  "version": "0.1.0",
+  "description": "Write web app UIs with the hammer ClojureScript library",
+  "author": {
+    "name": "Sören Stöhrmann",
+    "url": "https://github.com/sstoehrm"
+  },
+  "homepage": "https://github.com/sstoehrm/hammer",
+  "repository": "https://github.com/sstoehrm/hammer",
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "hammer app",
+    "shortDescription": "Build web app UIs with hammer.",
+    "longDescription": "hammer's public API and DOM behaviour for app authors: defc components, db paths, events and effects, forms, keyed lists, error reporting and testing.",
+    "developerName": "Sören Stöhrmann",
+    "category": "Coding",
+    "capabilities": ["Write"],
+    "websiteURL": "https://github.com/sstoehrm/hammer",
+    "defaultPrompt": [
+      "Build this UI with hammer.",
+      "Add a form to this hammer app.",
+      "Write tests for this hammer component."
+    ]
+  }
+}
