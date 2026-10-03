@@ -84,22 +84,25 @@ keep plain data (a value reused twice must not be one DOM node).
 Deps are the slot symbols that appear anywhere in the init form (by name, so a shadowing
 `let` counts too). A global atom deref'd as `@g` in the body or a binding init is
 **auto-bound** (`macros/auto-bind`, macro time): a hidden binding `g__autoN g` goes in
-front of the others (a watched `:local` when `g` is an atom, `:derived` otherwise;
-captured at create, so a later re-`def`/`set!` of `g` is not followed) and `@g` is
-rewritten to deref it, so the component re-renders and dependent bindings recompute
-when `g` changes. Only subtrees containing a deref are walked. Binders are modeled on
-`let`/`let*`/`loop`/`when-let`/…/`for`/`doseq` (with `:let`), `letfn` (body walked,
-fn bodies not) and `try`/`catch`; the core macros compile-pos needs (`when`, `cond`,
-`case`, `->`, …) are walked as written; **any other macro is expanded**
-(`cljs.analyzer/macroexpand-1`) and its expansion walked, so a local bound by any macro
-is a local. Destructuring is over-approximated (every symbol, and the name of every
-keyword or qualified symbol). Only plain user vars are auto-bound: not `js/…`,
-`cljs.core`, macros, fns (`:fn-var`) or dynamic vars. Left alone: props and bindings
+front of the others (a watched `:local` when `g` is an atom, `:derived` otherwise) and
+that slot is added to the deps of the body or init that derefs `g`
+(`macros/deps-with`), so the component re-renders and dependent bindings recompute
+when `g` changes. **The code is emitted unchanged** and keeps reading `@g`; the pass
+only analyses it, so a wrong guess costs an extra watch, never a wrong value (the
+watch is on the atom `g` held at create; a later re-`def` of `g` is read, not
+watched). Only subtrees containing a deref are scanned. Binders are modeled on
+`let`/`let*`/`loop`/`when-let`/`if-let` (else branch outside)/…/`for`/`doseq` (with
+`:let`), `letfn` and `try`/`catch`; binding-free core macros (`when`, `cond`, `case`,
+`->`, `binding`, …) are scanned as written; any other macro is expanded for the scan
+only. Destructuring is over-approximated (every symbol, and the names in
+`:keys`/`:syms`/`:strs`). Only plain user vars are auto-bound: not `js/…`,
+`cljs.core`, macros, fns (`:fn-var`) or dynamic vars. Not tracked: props and bindings
 (even ones bound later in the vector), locals, derefs inside `fn`/`#()` (render-time
-lambdas like `(map (fn …))` included), `@^:once g`, non-symbol targets, and derefs in
-helper fns. `@hammer.state/app-db` is never auto-bound (it would re-render on every
-db change): it emits the analyzer warning `:hammer.macros/app-db-deref` at the
-nearest enclosing form's line (enabled in `cljs.analyzer/*cljs-warnings*` too).
+lambdas like `(map (fn …))` included), `quote`/`comment`, `@^:once g`, non-symbol
+targets, and derefs in helper fns. `@hammer.state/app-db` is never auto-bound (it would
+re-render on every db change): it emits the analyzer warning
+`:hammer.macros/app-db-deref` at the nearest enclosing form's line (bound on at the
+warning site, so plain cljs builds show it too unless set to `false`).
 
 `defdraw`/`defloop` (`hammer.canvas`, `hammer.gl`) share this same binding compilation
 (`hammer.macros`), so the same table applies to their `props`/`bindings`.

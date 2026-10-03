@@ -13,6 +13,14 @@
   (let [used (set (filter symbol? (tree-seq coll? #(concat (seq %) (meta %)) form)))]
     (vec (keep-indexed (fn [i s] (when (used s) i)) slots))))
 
+(defn deps-with
+  "deps-of plus the indices of the slots in watch (hidden auto-bound slots the
+  form derefs through their global, so it does not name them)."
+  [slots form watch]
+  (vec (sort (into (set (deps-of slots form))
+                   (keep #(let [i (.indexOf ^java.util.List slots %)] (when (>= i 0) i)))
+                   watch))))
+
 (defn is?-form?
   "True for (is? ...), or (q/is? ...) where q is a hammer facade namespace or
   an alias of one in the ns requires. Decided by symbol, not by resolution."
@@ -39,8 +47,8 @@
   "slots: props and earlier binding names visible to this init. An :eq spec
   has :f for the path and :g for the compared value. macro names the calling
   macro in error messages."
-  [env macro slots [_ init]]
-  (let [deps (deps-of slots init)
+  [env macro slots [_ init] & [watch]]
+  (let [deps (deps-with slots init watch)
         args (mapv slots deps)
         eq? (is?-form? env init)]
     (when (and eq? (not= 3 (count init)))
@@ -76,23 +84,21 @@
 ;; @g in a body (or a binding init) where g is a global var is read during
 ;; render but tracked by nothing, so the component would never re-render when
 ;; g changes. Each such g gets a hidden binding initialised to g itself (a
-;; watched :local slot when g is an atom, a plain value otherwise) and @g is
-;; rewritten to deref that slot.
+;; watched :local slot when g is an atom, a plain value otherwise), and the body
+;; or init that derefs g gets that slot added to its deps. The code itself is
+;; emitted exactly as written and keeps reading @g: this pass only analyses it,
+;; so a wrong guess costs at most an extra watch, never a wrong value.
 ;;
-;; Only subtrees containing a deref are walked. Binders are modeled on the
-;; special forms (let*, loop*, fn*, letfn*, try/catch) and the core macros
-;; compile-pos relies on; any other macro is expanded and its expansion walked,
-;; so a local bound by any macro is seen as a local. Left alone: props and
-;; bindings, locals, derefs inside fns (they run at event/draw time), non-symbol
-;; targets, ^:once targets, and vars that are not plain user vars (js/, cljs.core,
-;; macros, fns, dynamic vars). hammer.state/app-db warns instead: watching it
-;; would re-render on every db change.
+;; Only subtrees containing a deref are looked at. Binders are modeled on the
+;; special forms (let*, loop*, fn*, letfn*, try/catch) and a few core macros;
+;; any other macro is expanded (for analysis only) to see what it binds. Not
+;; tracked: props and bindings, locals, derefs inside fns (they run at
+;; event/draw time), non-symbol targets, ^:once targets, quote/comment, and vars
+;; that are not plain user vars (js/, cljs.core, macros, fns, dynamic vars).
+;; hammer.state/app-db warns instead: watching it would re-render on every db
+;; change.
 
 (defmethod cljs.analyzer/error-message ::app-db-deref [_ {:keys [msg]}] msg)
-
-;; on by default for the stock cljs warning handler too (shadow-cljs shows any
-;; warning type that is not switched off)
-(alter-var-root #'cljs.analyzer/*cljs-warnings* assoc ::app-db-deref true)
 
 (defn- head
   "Name of form's head when it is an unqualified or core symbol."
@@ -101,21 +107,26 @@
              (contains? #{nil "cljs.core" "clojure.core"} (namespace (first form))))
     (name (first form))))
 
-(def ^:private fn-heads #{"fn" "fn*" "defn" "reify" "deftype" "defrecord"})
-(def ^:private let-heads #{"let" "let*" "loop" "loop*" "when-let" "if-let" "when-some" "if-some"
-                           "when-first" "dotimes" "with-open"})
+(def ^:private skip-heads #{"fn" "fn*" "defn" "reify" "deftype" "defrecord" "quote" "comment"})
+(def ^:private let-heads #{"let" "let*" "loop" "loop*" "when-let" "when-some" "when-first"
+                           "dotimes" "with-open"})
+(def ^:private if-heads #{"if-let" "if-some"})
 (def ^:private seq-heads #{"for" "doseq"})
 (def ^:private plain-macros
-  "Core macros walked as written (they bind nothing); compile-pos in core.clj
-  needs several of them unexpanded."
+  "Core macros that bind no local: walked as written."
   #{"when" "when-not" "if-not" "cond" "case" "condp" "and" "or" "->" "->>" "some->" "some->>"
-    "cond->" "cond->>" "doto" "comment" "assert"})
+    "cond->" "cond->>" "doto" "assert" "binding" "with-redefs"})
 
 (defn- lhs-syms
   "Names bound by a destructuring form, over-approximated: every symbol in it,
-  and the name of every keyword or qualified symbol (as in {:keys [:a b/c]})."
+  and the name of each keyword or qualified symbol in a :keys/:syms/:strs vector."
   [lhs]
-  (into #{} (keep #(when (or (symbol? %) (keyword? %)) (symbol (name %)))) (tree-seq coll? seq lhs)))
+  (let [forms (tree-seq coll? seq lhs)
+        names (for [m forms :when (map? m)
+                    [k v] m :when (and (keyword? k) (contains? #{"keys" "syms" "strs"} (name k)))
+                    x v :when (or (symbol? x) (keyword? x))]
+                (symbol (name x)))]
+    (into (set names) (filter simple-symbol?) forms)))
 
 (defn- deref-target [form]
   (when (and (seq? form) (= 2 (count form))
@@ -126,23 +137,18 @@
 (defn- has-deref? [form]
   (boolean (some deref-target (tree-seq coll? seq form))))
 
-(declare rewrite)
+(declare scan)
 
-(defn- rewrite-bindings
-  "Rewrites the init forms of binding vector bv; returns [bv' locals']. seq?:
-  a for/doseq vector, with :let [...] / :when / :while modifiers."
+(defn- scan-bindings
+  "Scans the init forms of binding vector bv; returns the locals after it.
+  seq?: a for/doseq vector, with :let [...] / :when / :while modifiers."
   [ctx locals bv seq?]
-  (loop [pairs (partition 2 bv) out [] locals locals]
-    (if-let [[l r] (first pairs)]
-      (cond
-        (and seq? (= l :let))
-        (let [[r' locals'] (rewrite-bindings ctx locals r false)]
-          (recur (rest pairs) (conj out l r') locals'))
-        (and seq? (keyword? l))
-        (recur (rest pairs) (conj out l (rewrite ctx locals r)) locals)
-        :else
-        (recur (rest pairs) (conj out l (rewrite ctx locals r)) (into locals (lhs-syms l))))
-      [(with-meta out (meta bv)) locals])))
+  (reduce (fn [locals [l r]]
+            (cond
+              (and seq? (= l :let)) (scan-bindings ctx locals r false)
+              (and seq? (keyword? l)) (do (scan ctx locals r) locals)
+              :else (do (scan ctx locals r) (into locals (lhs-syms l)))))
+          locals (partition 2 bv)))
 
 (defn- plain-var?
   "v (from cljs.analyzer.api/resolve) is a user var that can hold an atom."
@@ -150,106 +156,108 @@
   (and v (not (contains? '#{js cljs.core} (:ns v)))
        (not (:macro v)) (not (:fn-var v)) (not (:dynamic v))))
 
-(defn- auto-deref
-  "The rewrite of (deref g): a deref of g's hidden slot, or form unchanged."
-  [{:keys [env macro cname slots found pos]} locals form g]
-  (let [v (when-not (or (nil? env) (= "js" (namespace g)) (:once (meta g)) (contains? slots g)
+(defn- hit!
+  "Records (deref g): g's hidden slot is added to the current form's watch."
+  [{:keys [env macro cname slots found hits pos]} locals g]
+  (let [v (when-not (or (= "js" (namespace g)) (:once (meta g)) (contains? slots g)
                         (contains? locals g) (contains? (:locals env) g))
             (cljs.analyzer.api/resolve env g))]
     (cond
-      (not (plain-var? v)) form
+      (not (plain-var? v)) nil
       (= 'hammer.state/app-db (:name v))
-      (do (cljs.analyzer/warning ::app-db-deref (merge env pos)
-                                 {:msg (str macro " " cname ": @" g " re-renders only by chance; read the db"
-                                            " through a path binding, e.g. [todos [:todos]]")})
-          form)
+      ;; bound here: a build that started before hammer.macros loaded has its own copy
+      (binding [cljs.analyzer/*cljs-warnings*
+                (if (contains? cljs.analyzer/*cljs-warnings* ::app-db-deref)
+                  cljs.analyzer/*cljs-warnings*
+                  (assoc cljs.analyzer/*cljs-warnings* ::app-db-deref true))]
+        (cljs.analyzer/warning ::app-db-deref (merge env pos)
+                               {:msg (str macro " " cname ": @" g " re-renders only by chance; read the db"
+                                          " through a path binding, e.g. [todos [:todos]]")}))
       :else
       (let [k (:name v)
             s (or (get-in @found [k :slot])
                   (let [s (gensym (str (str/replace (name k) #"[^A-Za-z0-9_]" "_") "__auto"))]
                     (vswap! found assoc k {:slot s :sym g})
                     s))]
-        (with-meta (list (first form) s) (meta form))))))
+        (vswap! hits conj s)))))
 
-(defn- walk-all [ctx locals form]
-  (with-meta (apply list (map #(rewrite ctx locals %) form)) (meta form)))
-
-(defn- rewrite-seq [ctx locals form]
+(defn- scan-seq [ctx locals form]
   (let [h (head form)
-        m (meta form)
-        rewrite* (fn [locals xs] (map #(rewrite ctx locals %) xs))]
+        scan* (fn [locals xs] (run! #(scan ctx locals %) xs))]
     (cond
-      (or (contains? fn-heads h) (= h "quote")) form
+      (contains? skip-heads h) nil
 
       (and (contains? #{"letfn" "letfn*"} h) (vector? (second form)))
-      (let [fns (second form)
-            names (into #{} (map #(if (seq? %) (first %) %)) (if (= h "letfn") fns (take-nth 2 fns)))]
-        (with-meta (apply list (first form) fns (rewrite* (into locals names) (drop 2 form))) m))
+      (let [fns (second form)]
+        (scan* (into locals (map #(if (seq? %) (first %) %)) (if (= h "letfn") fns (take-nth 2 fns)))
+               (drop 2 form)))
 
       (= h "try")
-      (with-meta (apply list (first form)
-                        (map (fn [x]
-                               (if (and (seq? x) (= 'catch (first x)))
-                                 (apply list 'catch (second x) (nth x 2)
-                                        (rewrite* (conj locals (nth x 2)) (drop 3 x)))
-                                 (rewrite ctx locals x)))
-                             (rest form)))
-        m)
+      (doseq [x (rest form)]
+        (if (and (seq? x) (= 'catch (first x)))
+          (scan* (conj locals (nth x 2)) (drop 3 x))
+          (scan ctx locals x)))
 
       (and (contains? let-heads h) (vector? (second form)))
-      (let [[bv' locals'] (rewrite-bindings ctx locals (second form) false)]
-        (with-meta (apply list (first form) bv' (rewrite* locals' (drop 2 form))) m))
+      (scan* (scan-bindings ctx locals (second form) false) (drop 2 form))
+
+      (and (contains? if-heads h) (vector? (second form)))
+      (let [[_ bv then & else] form]
+        (scan ctx (scan-bindings ctx locals bv false) then)
+        (scan* locals else))
 
       (and (contains? seq-heads h) (vector? (second form)))
-      (let [[bv' locals'] (rewrite-bindings ctx locals (second form) true)]
-        (with-meta (apply list (first form) bv' (rewrite* locals' (drop 2 form))) m))
+      (scan* (scan-bindings ctx locals (second form) true) (drop 2 form))
 
-      (contains? plain-macros h) (walk-all ctx locals form)
+      (contains? plain-macros h) (scan* locals form)
 
-      ;; any other macro may bind locals: walk its expansion
+      ;; any other macro may bind locals: look at its expansion (not emitted)
       (and (symbol? (first form)) (not (contains? locals (first form)))
            (cljs.analyzer/get-expander (first form) (:env ctx)))
       (let [x (cljs.analyzer/macroexpand-1 (:env ctx) form)]
-        (if (identical? x form) (walk-all ctx locals form) (rewrite ctx locals x)))
+        (if (identical? x form) (scan* locals form) (scan ctx locals x)))
 
-      :else (walk-all ctx locals form))))
+      :else (scan* locals form))))
 
-(defn- rewrite
-  "form with each auto-bound @g replaced by a deref of g's hidden slot."
+(defn- scan
+  "Records the hidden slots of the globals form derefs during render."
   [ctx locals form]
-  (let [m (meta form)
-        ;; @x reads as a deref list without position; report the nearest enclosing one
-        ctx (if (:line m) (assoc ctx :pos (select-keys m [:line :column])) ctx)]
-    (cond
-      (not (has-deref? form)) form
-      (deref-target form) (auto-deref ctx locals form (deref-target form))
-      (seq? form) (rewrite-seq ctx locals form)
-      (vector? form) (with-meta (mapv #(rewrite ctx locals %) form) m)
-      (map? form) (with-meta (into {} (map (fn [[k v]] [(rewrite ctx locals k) (rewrite ctx locals v)])) form) m)
-      (set? form) (with-meta (into #{} (map #(rewrite ctx locals %)) form) m)
-      :else form)))
+  (when (has-deref? form)
+    (let [m (meta form)
+          ;; @x reads as a deref list without position; report the nearest enclosing one
+          ctx (if (:line m) (assoc ctx :pos (select-keys m [:line :column])) ctx)]
+      (cond
+        (deref-target form) (hit! ctx locals (deref-target form))
+        (seq? form) (scan-seq ctx locals form)
+        (map? form) (run! #(scan ctx locals %) (mapcat identity form))
+        (coll? form) (run! #(scan ctx locals %) form)))))
 
 (defn auto-bind
-  "[bindings' forms'] for a component macro: each global atom deref'd in a
-  binding init or in forms (the body, or a draw component's opts and fn) gets
-  a hidden binding in front of the others, and those derefs read it."
+  "Hidden bindings for the global atoms a component derefs during render.
+  Returns {:bindings b' :watch w :forms-watch fw}: b' is bindings with the
+  hidden pairs in front, w a vector of hidden-slot sets aligned with b''s
+  pairs (what each init derefs), fw the set for forms (the body, or a draw
+  component's opts and fn)."
   [env macro cname props bindings forms]
-  (if (nil? env)
-    [bindings forms]
-    (let [pairs (partition 2 bindings)
-          ctx {:env env :macro macro :cname cname :found (volatile! {})
-               :slots (into (set props) (map first pairs))}
-          pairs' (mapv (fn [[s init]] [s (rewrite ctx #{} init)]) pairs)
-          forms' (mapv #(rewrite ctx #{} %) forms)
-          hidden (mapcat (fn [{:keys [slot sym]}] [slot sym]) (vals @(:found ctx)))]
-      [(into (vec hidden) cat pairs') forms'])))
+  (let [pairs (partition 2 bindings)]
+    (if (nil? env)
+      {:bindings bindings :watch (vec (repeat (count pairs) #{})) :forms-watch #{}}
+      (let [ctx {:env env :macro macro :cname cname :found (volatile! {})
+                 :slots (into (set props) (map first pairs))}
+            run (fn [form] (let [hits (volatile! #{})] (scan (assoc ctx :hits hits) #{} form) @hits))
+            watch (mapv (fn [[_ init]] (run init)) pairs)
+            forms-watch (reduce into #{} (map run forms))
+            hidden (vals @(:found ctx))]
+        {:bindings (into (vec (mapcat (fn [{:keys [slot sym]}] [slot sym]) hidden)) bindings)
+         :watch (into (vec (repeat (count hidden) #{})) watch)
+         :forms-watch forms-watch}))))
 
 (defn draw-def
   "Expansion of defdraw/defloop for backend kind (:canvas or :gl).
   more is [opts? draw-fn]; opts, when present, is a literal map."
   [env macro kind loop? cname props bindings more]
   (check-slots! macro cname props bindings)
-  (let [[bindings more] (auto-bind env macro cname props bindings more)
+  (let [{:keys [bindings watch forms-watch]} (auto-bind env macro cname props bindings more)
         [opts draw] (case (count more)
                       1 (if (map? (first more))
                           (throw (ex-info (str macro ": missing draw-fn after opts") {:name cname}))
@@ -265,9 +273,9 @@
         ~(str cname)
         ~(count props)
         ~(vec (map-indexed (fn [j pair]
-                             (binding-spec env macro (subvec slots 0 (+ (count props) j)) pair))
+                             (binding-spec env macro (subvec slots 0 (+ (count props) j)) pair (watch j)))
                            pairs))
-        ~(deps-of slots [opts draw])
+        ~(deps-with slots [opts draw] forms-watch)
         (fn ~slots (cljs.core/array ~opts ~draw))
         ~kind
         ~loop?))))

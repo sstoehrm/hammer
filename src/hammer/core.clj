@@ -221,7 +221,7 @@
   (when (and (empty? body) (seq bindings))
     (throw (ex-info (str "defc " cname ": missing bindings vector, write (defc " cname " " (pr-str props) " [] body)")
                     {:name cname})))
-  (let [[bindings body] (m/auto-bind &env "defc" cname props bindings body)
+  (let [{:keys [bindings watch forms-watch]} (m/auto-bind &env "defc" cname props bindings body)
         pairs (partition 2 bindings)
         slots (into (vec props) (map first pairs))]
     (let [defs (atom [])
@@ -237,7 +237,7 @@
             ~(str cname)
             ~(count props)
             ~(vec (map-indexed (fn [j pair]
-                                 (m/binding-spec &env "defc" (subvec slots 0 (+ (count props) j)) pair))
+                                 (m/binding-spec &env "defc" (subvec slots 0 (+ (count props) j)) pair (watch j)))
                                pairs))
-            ~(m/deps-of slots (vec body))
+            ~(m/deps-with slots (vec body) forms-watch)
             (fn ~slots ~@out)))))))

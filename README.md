@@ -60,7 +60,8 @@ dynamic parts. Hiccup built by other functions, passed as a prop or given to
 
 A global atom deref'd in a component, `[:span (count @cart)]`, is tracked: the
 component re-renders when `cart` changes, as if you had bound it (`[c cart]`, then
-`@c`); the atom is captured when the instance is created. This covers `@g` written
+`@c`). The code is compiled as written and reads `@cart` itself; hammer only adds a
+watch on the atom `cart` held when the instance was created. This covers `@g` written
 in the body and binding inits, where `g` is a var of your own. Not covered, so bind
 the atom yourself (`[c cart]`): derefs inside any `fn`/`#(…)`, including render-time
 ones like `(map (fn [x] … @cart …) xs)` (event handlers run later anyway), derefs in

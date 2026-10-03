@@ -12,7 +12,7 @@
             [hammer.cells :as cells]
             [hammer.core :refer [defc]])
   (:require-macros [hammer.macro-probe :refer [expand-warnings]]
-                   [hammer.tpl-macros :refer [with-local]]))
+                   [hammer.tpl-macros :refer [with-local local?]]))
 
 (use-fixtures :each {:before t/reset-app!})
 
@@ -154,3 +154,35 @@
     (swap! cart conj 2)
     (t/flush!)
     (is (= "<i>3</i>" (.-innerHTML el)))))
+
+;; ---- the body is emitted as written: macros see the real locals (re-review)
+
+(defc env-macro [] [] (let [k 1] [:i (local? k (count @cart))]))
+(defc commented [] [] [:i (comment @cart) "x"])
+(defc non-keys-destructure [] [m [:m]] (let [{c :cart} m] [:i (str c "/" (count @cart))]))
+(defc if-let-else [] [] (if-let [cart nil] [:i "then"] [:i (count @cart)]))
+
+(deftest macros-in-the-body-see-its-locals
+  (reset! cart [1 2])
+  (let [el (container)]
+    (dom/mount! [env-macro] el)
+    (is (= "<i>true/2</i>" (.-innerHTML el)))
+    (is (= 1 (nspecs env-macro)))
+    (swap! cart conj 3)
+    (t/flush!)
+    (is (= "<i>true/3</i>" (.-innerHTML el)))))
+
+(deftest comment-is-not-tracked
+  (is (= 0 (nspecs commented))))
+
+(deftest only-keys-keywords-are-local-names
+  (is (= 2 (nspecs non-keys-destructure)) "m and the hidden cart binding"))
+
+(deftest if-let-else-branch-sees-the-global
+  (is (= 1 (nspecs if-let-else)))
+  (reset! cart [1])
+  (let [el (container)]
+    (dom/mount! [if-let-else] el)
+    (swap! cart conj 2)
+    (t/flush!)
+    (is (= "<i>2</i>" (.-innerHTML el)))))
