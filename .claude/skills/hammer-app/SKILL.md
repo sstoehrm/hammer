@@ -55,8 +55,17 @@ browser, so you should not need to read hammer's source.
 | anything else | derived from the props and earlier bindings it names |
 
 - `(vector a b)` is a value; `[a b]` is always a path.
-- The body re-renders only when a binding it names changes. A raw `@app-db` or
-  `@some-atom` in the body never triggers a render: bind it instead.
+- The body re-renders only when a binding it names changes, or when a global
+  atom it derefs directly changes: `[:span (count @cart)]` and
+  `[n (count @cart)]` track `cart` (the code still reads `@cart` itself).
+  Not tracked, so bind the atom yourself (`[c cart]`, then `@c`): a deref
+  inside any `fn`/`#(…)` (including `(map (fn [x] … @cart) xs)`) or inside a
+  helper function, `(deref (f))`, and vars defined after the component.
+  `@^:once config` reads without tracking.
+- `@app-db` is a compile warning: read the db through path bindings
+  (`[todos [:todos]]`). For per-row state like a selection, prefer
+  `(is? [:selected] id)` over a global atom: every row that derefs the atom
+  re-renders when it changes.
 - Use a component as `[comp arg1 arg2]` in hiccup. Its args are compared with
   `=`; an inline `fn` arg is never `=`, so the child re-renders every time.
 - The props and bindings vectors are both required: a missing one is a compile
@@ -182,7 +191,9 @@ a missing handler: it reports it and keeps the old DOM. Reports go to the
 (on-error! nil)                                         ; back to the console
 ```
 
-Messages: "no event handler for :x", "no fx registered for :k", "handler for :x
+At compile time, `@app-db` in a component warns
+(`:hammer.macros/app-db-deref`, with the line). At runtime the messages are:
+"no event handler for :x", "no fx registered for :k", "handler for :x
 returned no known effect keys (…) - did it return db instead of {:db db}, or miss
 a reg-fx?", "handler must return an effect map", "event must be a vector",
 "event handler failed [:x …]", "fx failed :k", "render failed in <component>",
