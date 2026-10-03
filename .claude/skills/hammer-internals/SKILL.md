@@ -10,7 +10,7 @@ description: Use when reading, modifying, debugging, or building apps with the h
 re-frame-style events without React or subscriptions. Components name the db paths
 they read. A path trie marks only the instances whose paths changed. Each instance
 diffs only its own hiccup, and child components are diff boundaries. The public API
-and an example are in `README.md`; this skill covers what only the source shows.
+and an example are in `docs/develop-with-a-hammer.md`; this skill covers what only the source shows.
 
 ## Files
 

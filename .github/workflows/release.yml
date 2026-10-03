@@ -1,0 +1,71 @@
+name: Release
+
+# Push a tag to release: git tag v0.1.0 && git push origin v0.1.0
+# Creates a GitHub release with the jar attached, and deploys to Clojars when
+# the repository secrets CLOJARS_USERNAME and CLOJARS_PASSWORD (a deploy token)
+# are set.
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      # job level, so the deploy step's `if` can see whether they are set
+      CLOJARS_USERNAME: ${{ secrets.CLOJARS_USERNAME }}
+      CLOJARS_PASSWORD: ${{ secrets.CLOJARS_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 25
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install Clojure CLI and babashka
+        uses: DeLaGuardo/setup-clojure@13.7.0
+        with:
+          cli: latest
+          bb: latest
+
+      - name: Cache Maven and shadow-cljs deps
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.m2/repository
+            ~/.gitlibs
+          key: deps-${{ hashFiles('deps.edn', 'shadow-cljs.edn', 'bb.edn') }}
+
+      - name: Tag is a version
+        run: bb release:check ${{ github.ref_name }}
+
+      - run: npm ci
+
+      - name: Run tests
+        run: npm test
+
+      - name: Build the jar
+        run: bb jar ${{ github.ref_name }}
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >
+          gh release create "${{ github.ref_name }}"
+          target/hammer-*.jar
+          --title "hammer ${{ github.ref_name }}"
+          --generate-notes
+
+      - name: Deploy to Clojars
+        if: env.CLOJARS_USERNAME != '' && env.CLOJARS_PASSWORD != ''
+        run: clojure -T:build deploy :version '"${{ github.ref_name }}"'

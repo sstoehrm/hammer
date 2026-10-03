@@ -72,7 +72,7 @@ const SCENARIOS = [
   { name: 'loop-100k', kind: 'loop', build: 'bench-canvas', vanilla: 'loop.js', app: 'loop', n: 100000,
     desc: 'defloop, 100000 moving rects, per-frame state in volatile!' },
   { name: 'loop-atom-10k', kind: 'loop', build: 'bench-canvas', vanilla: 'loop.js', app: 'loop-atom', n: 10000,
-    desc: 'defloop, 10000 moving rects, per-frame state in a watched atom + swap! (the pattern the README warns against); vanilla is the same code as loop-10k' },
+    desc: 'defloop, 10000 moving rects, per-frame state in a watched atom + swap! (the pattern docs/develop-with-a-hammer.md warns against); vanilla is the same code as loop-10k' },
   { name: 'many-canvases-1k', kind: 'ops', build: 'bench-dom', vanilla: 'many.js', app: 'many', n: 1000,
     ops: ['create', 'update', 'select', 'clear'], pixels: true,
     desc: '1000 20x20 defdraw cells in a keyed hammer.core list (colour from [:colors id], highlight from (is? [:sel] id)); vanilla: 1000 hand-managed <canvas>' },

@@ -1,242 +1,67 @@
+<img src="assets/hammer.svg" alt="" width="96" height="96">
+
 # hammer
 
-re-frame's events, without React or subscriptions. Components declare the db
-paths they read; a path trie marks exactly the components whose paths changed,
-and each re-renders by diffing only its own hiccup.
+If all you have is a hammer, everything looks like a nail. This hammer is a
+ClojureScript frontend library, so every problem looks like a web page, which
+is convenient, because that's the only kind of nail it can hit.
 
-```clojure
-(require '[hammer.core :refer [defc reg-event reg-fx dispatch dispatch-sync mount!]])
+## Why
 
-(reg-event :toggle (fn [db id] {:db (update-in db [:todos id :done] not)}))
+Because I wanted a really fast ClojureScript frontend library that can compete
+with the other frameworks. It is also token efficient if you develop with the
+skill: see [stack-cap-bench](https://github.com/sstoehrm/stack-cap-bench) (trust
+me, it is not faked ;)).
 
-(defc todo-item [id]                        ; positional props
-  [todo [:todos id]                         ; vector literal = db path
-   edit (atom false)                        ; atom = local state
-   cls  (when (:done todo) "done")]         ; anything else = derived from the names it uses
-  [:li {:class cls :on-click [:toggle id]}  ; event vector = dispatch
-   (:title todo)])
+Why is it fast? I have literally no clue: Claude developed and optimized it,
+but it seems to be somewhat legit. What it does to be fast, and the numbers, are
+in [docs/performance.md](docs/performance.md).
 
-(mount! [todo-item 1] (js/document.getElementById "app") {:todos {1 {:title "milk"}}})
-```
+## Features
 
-| API | |
-|---|---|
-| `(reg-event id (fn [db & args] effects))` | effects: `:db`, `:dispatch` (one event), any `reg-fx` key |
-| `(reg-fx k (fn [value]))` | side effects |
-| `(dispatch ev)` / `(dispatch-sync ev)` | queued (microtask) / immediate + render |
-| `(defc name [props] [bindings] body)` | see above; keys via `^{:key k}` (or `:key` in an element's attrs) |
-| `(mount! hiccup el db)` | set db, render into `el` |
-| `(mount! hiccup el)` | render into `el`, keeping the current db |
-| `(on-error! (fn [{:keys [level message error]}]))` | replaces the console as the place hammer reports to; `nil` restores it |
+- re-frame-style events and effects: `reg-event`, `reg-fx`, `dispatch`, effect
+  maps, without React and without subscriptions.
+- Components name the app-db paths they read. A path trie re-renders exactly the
+  components whose paths changed, and each one diffs only its own hiccup.
+- `is?` bindings for selections: only the rows whose result flips re-render.
+- Local state (`atom` bindings), derived bindings that recompute only when what
+  they use changes, and global atoms deref'd in a component tracked
+  automatically.
+- Literal hiccup compiles to templates, cloned per instance, with only the
+  changed parts written on update.
+- Keyed lists with minimal DOM moves, delegated event handlers, forms that never
+  fight the user's typing.
+- Canvas 2D and WebGL2 components (`defdraw`, `defloop`) with the same
+  reactivity, drawing once per animation frame.
+- Mistakes are reported, never thrown at the user: `on-error!` to route them,
+  and tests fail on them (`hammer.testing`).
+- No npm dependencies; a git dep for shadow-cljs or plain `deps.edn`;
+  `:advanced` builds.
+- A Claude Code and Codex plugin, `hammer-app`, that teaches your agent the
+  API: `/plugin marketplace add sstoehrm/hammer`, then
+  `/plugin install hammer-app@hammer`.
 
-Hiccup: `:on-<dom-event>` takes an event vector or fn; `:ref` fn gets the element,
-and `nil` on removal, so write it as `#(some-> % .focus)` rather than assuming a
-non-nil element. Handlers run from one capture-phase listener per event type on
-the `mount!` container, so `(.-currentTarget e)` is that container; a fn
-handler gets the element it is on as a second argument instead:
-`(fn [e el] …)`. Handlers are always called with these two arguments: a
-one-arg `(fn [e] …)` ignores the second, but a multi-arity fn needs a 2-arity,
-and an optional second parameter receives the element. Attribute values: `nil` removes the
-attribute, `true`/`false` add or remove it (`:disabled true` → `disabled=""`),
-except for `draggable`, `spellcheck`, `contenteditable`, `writingsuggestions`
-and `aria-*`, which take
-the strings `"true"`/`"false"`; anything else is written with `str`.
-`:class` string or collection;
-`:style` map of CSS property names (`:background-color`; dev builds warn on
-`:backgroundColor`) or a CSS string. SVG is
-not supported in v1 — elements are created with `createElement`.
+## Does it work?
 
-Errors: hammer does not throw for a failing handler, fx, render or draw, or for
-a mistake like a missing handler or a handler that returns `db` instead of
-`{:db db}`. It reports it (`level` `:error` or `:warn`, a `"hammer: …"`
-`message`, the caught `error` or `nil`) and keeps the rest of the app running.
-The default reporter is the browser console; `on-error!` replaces it, e.g. to
-send errors to a service or show them on the page.
+No clue. Use with caution.
 
-Literal hiccup in a `defc` body compiles to templates: the static structure is
-built once and cloned per instance, and an update writes only the changed
-dynamic parts. Hiccup built by other functions, passed as a prop or given to
-`mount!` is diffed as plain data, with the same result.
+- [docs/develop-with-a-hammer.md](docs/develop-with-a-hammer.md): setup, API,
+  testing, canvas, and working on hammer itself.
 
-A global atom deref'd in a component, `[:span (count @cart)]`, is tracked: the
-component re-renders when `cart` changes, as if you had bound it (`[c cart]`, then
-`@c`). The code is compiled as written and reads `@cart` itself; hammer only adds a
-watch on the atom `cart` held when the instance was created. This covers `@g` written
-in the body and binding inits, where `g` is a var of your own. Not covered, so bind
-the atom yourself (`[c cart]`): derefs inside any `fn`/`#(…)`, including render-time
-ones like `(map (fn [x] … @cart …) xs)` (event handlers run later anyway), derefs in
-helper functions the body calls, and `(deref (f))`. `@^:once config` reads without
-tracking. `@app-db` warns at compile time: read the db through path bindings. For
-per-row state such as a selection, prefer `(is? [:selected] id)` over a global atom:
-every row that derefs the atom re-renders when it changes.
+## TODO
 
-An `(atom ...)` binding is created once per instance and does not follow later
-prop changes. A vector literal binding is always a path; use `(vector a b)` for
-a vector value.
+- [ ] First release: tag `v0.1.0` (GitHub release with the jar; use it via the
+  git tag).
+- [ ] Publish on Clojars once the git releases are verified.
+- [ ] A built-in HTTP effect (`fetch`-based `:http`), so apps don't each write one.
+- [ ] SVG: elements are created with `createElement`, so `<svg>` content does not
+  render yet.
+- [ ] Canvas components' `:attrs` follow the DOM attribute rules (booleans,
+  `aria-*`).
+- [ ] Warn when an `:on-*` handler is a keyword, set or map (ignored today).
+- [ ] Track global atoms deref'd in helper functions, not only in the component.
+- [ ] 3D on top of `hammer.gl`: meshes, cameras, materials, a scene graph.
 
-`(is? path v)` as a whole binding init is `true` iff the db value at `path` is `=`
-to `v` (both may name props and earlier bindings). Unlike a `[:selected]` path
-binding, which marks every row when the selection moves, it marks only the
-instances whose result flips, e.g. the old and the new selected row:
+## Special thanks
 
-```clojure
-(defc row [id]
-  [r    [:rows id]
-   sel? (is? [:selected] id)     ; refer is? from hammer.core
-   cls  (when sel? "danger")]
-  [:tr {:class cls} ...])
-```
-
-`defc` recognizes it by symbol: unqualified `is?`, or a qualified `is?` on any
-hammer facade (`hammer.core`, `hammer.app`, `hammer.canvas`, `hammer.gl`) or
-an alias of one. Anywhere else, e.g. nested inside another expression, calling
-`is?` throws.
-
-The 2-arity `mount!` renders without touching `app-db`; call it from a
-`^:dev/after-load` hook so a hot reload re-renders with whatever db state the
-running app already has, instead of resetting it.
-
-## Testing
-
-`hammer.testing` provides:
-
-- `(flush!)` — drains queued events, then renders until nothing is dirty
-  (synchronous equivalent of the event + render microtasks). `flush!` alone
-  never draws `defdraw`/`defloop` components — they only draw at a frame.
-  It then throws if hammer reported an error since the last `flush!`
-  (`ex-info` with `{:errors [...]}`); warnings never throw. Loading
-  `hammer.testing` turns this on, whatever `on-error!` is set to.
-- `(expect-errors f)` — runs `(f)` and returns the reports made during it
-  instead of letting them fail `flush!`; for tests of error behaviour.
-- `(check-errors!)` — the same check on its own; `frame!` runs it after its
-  draw frame. Use it (e.g. as an `:after` fixture) in tests that only call
-  `dispatch-sync`, which never throws for a reported error.
-- `(renders c)` / `(reset-renders! & cs)` — a component's render count since
-  the last reset; use to assert that only the expected components re-rendered.
-- `(reset-app!)` — unmounts every root, empties `app-db` and drops unchecked
-  reports; use as a `:before` fixture between tests.
-- `(use-fake-frames!)` — replaces `requestAnimationFrame` so `defdraw`/`defloop`
-  components draw only when the test calls `frame!`, never on a real animation
-  frame; add it to the same `:before` fixture as `reset-app!` in any test that
-  touches `hammer.canvas`/`hammer.gl`.
-- `(frame! ms)` — `flush!` plus one draw frame at time `ms`: drains events,
-  renders, then draws every queued or running `defdraw`/`defloop` instance
-  once, as `requestAnimationFrame` would at time `ms`.
-
-## Canvas and WebGL2
-
-`hammer.canvas` (Canvas 2D) and `hammer.gl` (WebGL2) add two more component
-macros, on top of the same reactivity as `defc`: `defdraw` redraws (at the next
-animation frame) when a binding its opts or draw-fn name changes; `defloop` is
-the same but also redraws every animation frame while mounted and `:run?` is
-truthy. Both draw in **immediate mode**: the component returns a draw fn, and
-hammer decides when to call it — it never clears the canvas for you.
-
-```clojure
-(require '[hammer.core :refer [defc reg-event mount!]])
-(require '[hammer.canvas :refer [defdraw defloop]])
-
-(defdraw chart [] [pts [:points] sel [:selected]]
-  {:size [800 400] :on-click [:pick]}                ; dispatches [:pick x y]
-  (fn [ctx {:keys [w h]}]
-    (.clearRect ctx 0 0 w h)
-    (doseq [[id {:keys [x y]}] pts]
-      (set! (.-fillStyle ctx) (if (= id sel) "red" "gray"))
-      (.fillRect ctx x y 4 4))))
-
-(defloop balls [] [world (volatile! (init-world 200)) paused? [:paused?]]
-  {:run? (not paused?)}
-  (fn [ctx {:keys [w h dt]}]
-    (vswap! world step dt)
-    (render ctx w h @world)))
-
-(defc page [] [] [:div [:h1 "Readings"] [chart] [balls]])   ; draw components embed in DOM hiccup
-```
-
-`props` and bindings are exactly `defc`'s. `opts` is an optional literal map
-whose values see the props and bindings in scope, like the body; `draw-fn` is
-likewise an expression in that scope, re-evaluated only when a slot it names
-changes.
-
-Per-frame mutable state (like `balls`' `world` above) belongs in a `volatile!`
-binding, not an atom or the db. An atom binding is watched: mutating it every
-frame marks the instance and re-evaluates `opts` and the draw fn on top of the
-loop's own per-frame draw, and a db write costs an event round trip on top of
-that. A `volatile!` init has no named deps, so it's a plain derived binding —
-computed once at `create` and never re-run — and `vswap!`/`@` inside the draw
-fn just mutates it directly, same as an atom would, without the watch.
-
-| Option | Variants | Meaning |
-|---|---|---|
-| `:size` | all | `[w h]` in CSS pixels. Absent: the canvas fills its CSS box and follows it (`ResizeObserver`) — give the container a CSS height, or the box is 0px tall and the canvas never draws. |
-| `:run?` | `defloop` | Loop runs while truthy. Default `true`. While paused, it still redraws on binding changes (with `:dt 0`). |
-| `:max-dt` | `defloop` | Cap for `:dt` in ms. Default `100`. |
-| `:init` | all | `(fn [ctx-or-gl info] res)`, run once before the first draw (`hammer.gl`: again after `webglcontextrestored`). |
-| `:dispose` | all | `(fn [res])`, run on unmount (`hammer.gl`: also on `webglcontextlost`, before re-init on restore). |
-| `:context-attrs` | `hammer.gl` | Map passed to `getContext("webgl2", attrs)`, e.g. `{:antialias false :alpha false}`. Read once at setup, since context attributes are fixed at creation. |
-| `:on-*` | all | Canvas DOM events, e.g. `:on-click`, `:on-pointermove`. A fn gets `(e {:x :y})` in canvas-local CSS pixels; an event vector is dispatched with `x y` appended, e.g. `[:pick]` → `[:pick 120 48]`. |
-| `:fallback` | `hammer.gl` | Hiccup rendered instead of the canvas when WebGL2 is unavailable (DOM embedding only). **Static: plain hiccup only** — no components, no `:on-*` handlers, no `:ref`. It is rendered once through the DOM renderer's internal host-render and is never mounted or unmounted as a component tree, so nothing in it is reactive. |
-| `:on-unsupported` | `hammer.gl` | `(fn [reason])` called when WebGL2 is unavailable. |
-| `:attrs` | all | Extra attributes for the `<canvas>` element (`:class`, `:style`, `:aria-label`, …). |
-
-The draw fn's arguments:
-
-- `hammer.canvas`: `(fn [ctx info])`, or `(fn [ctx info res])` when `:init` is
-  given. `ctx` is the `CanvasRenderingContext2D`, already scaled by
-  `devicePixelRatio` so you draw in CSS pixels; hammer never clears it.
-- `hammer.gl`: `(fn [gl info])`, or `(fn [gl info res])` with `:init`. `gl` is
-  the raw `WebGL2RenderingContext`; hammer calls `gl.viewport(0, 0,
-  drawingBufferWidth, drawingBufferHeight)` before each draw (the counterpart
-  of Canvas 2D's DPR scaling) and never clears it.
-- `info` is `{:w :h :dpr}` in CSS pixels; for `defloop` it also has `{:t :dt :n}`:
-  elapsed time in ms since the loop started, the capped delta since the last
-  frame, and a frame counter.
-- `res` is whatever `:init` returned.
-
-**Mounting:** a draw component used inside `defc` hiccup (`[chart]`, keys work
-as usual) renders its own `<canvas>` in place. To mount one standalone on a
-canvas, without `hammer.core`/`hammer.dom` in the bundle, use
-`hammer.canvas/mount!` or `hammer.gl/mount!` — same shape as `hammer.core/mount!`,
-taking `(hiccup el)` or `(hiccup el db)`; `el` is an existing `<canvas>`
-(adopted as-is) or a container (a canvas is created inside it). All three
-`mount!`s share one root registry: mounting any of them on an element first
-unmounts whatever another one mounted there.
-
-`bb sizes` builds the three size-check bundles (`hammer.core`-only,
-`hammer.canvas`-only, `hammer.gl`-only), prints each one's raw and gzip size,
-and checks each build's shadow `manifest.edn` `:sources` for the other
-variants' namespaces (dom bundle must not carry `hammer.draw`/`hammer.canvas`/`hammer.gl`,
-and so on), failing with exit 1 if one leaks in.
-
-3D (meshes, cameras, materials, a scene graph on top of `hammer.gl`) is a TODO,
-not part of this API.
-
-See `examples/canvas` (a scatter chart with click-to-select, plus bouncing
-balls with a pause button) and `examples/gl` (a WebGL2 colour swatch and a
-pulsing loop, plus a shader-drawn triangle, with a fallback message when
-WebGL2 is unavailable).
-
-WebGL2 needs no flags; each `hammer.gl` component owns a context and browsers
-cap live contexts at about 16 per page. Chromium evicts the oldest context
-when the cap is exceeded; the component stays blank until the browser
-restores it, which Chromium does only after another WebGL context has been
-garbage-collected — possibly much later. Keep live `hammer.gl` components
-well under the cap.
-
-## Measured
-
-- Core size (`bb loc`): 1078 lines
-- TodoMVC tokens vs re-frame (`bb tokens`): 52.5% fewer. Same features (add, toggle,
-  toggle all, edit, delete, clear completed, filters, localStorage); re-frame's
-  example also validates the db with spec and routes with secretary, ours
-  validates nothing and routes with one `hashchange` listener.
-
-## Develop
-
-`npm install`, `npm test`, `npx shadow-cljs watch todomvc` → http://localhost:8280
-
-`npx shadow-cljs watch canvas-demo` → http://localhost:8290, `npx shadow-cljs watch
-gl-demo` → http://localhost:8291 (`examples/canvas`, `examples/gl`).
-
-Without shadow-cljs: `examples/counter` uses `deps.edn` and figwheel-main, with hammer
-as a `:local/root` dep (`cd examples/counter && clj -M:dev` → http://localhost:9500).
+To [re-frame](https://github.com/day8/re-frame) for the API inspiration.
