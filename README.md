@@ -58,6 +58,13 @@ built once and cloned per instance, and an update writes only the changed
 dynamic parts. Hiccup built by other functions, passed as a prop or given to
 `mount!` is diffed as plain data, with the same result.
 
+A global atom deref'd in a component, `[:span (count @cart)]`, is tracked: the
+component re-renders when `cart` changes, as if you had bound it (`[c cart]`, then
+`@c`). This covers the body and binding inits, not helper functions the body calls
+(bind the atom for those), and not derefs inside event handlers, which run later.
+`@^:once config` reads without tracking. `@app-db` warns at compile time: read the
+db through path bindings instead.
+
 An `(atom ...)` binding is created once per instance and does not follow later
 prop changes. A vector literal binding is always a path; use `(vector a b)` for
 a vector value.

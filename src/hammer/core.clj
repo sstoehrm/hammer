@@ -221,7 +221,8 @@
   (when (and (empty? body) (seq bindings))
     (throw (ex-info (str "defc " cname ": missing bindings vector, write (defc " cname " " (pr-str props) " [] body)")
                     {:name cname})))
-  (let [pairs (partition 2 bindings)
+  (let [[bindings body] (m/auto-bind &env "defc" cname props bindings body)
+        pairs (partition 2 bindings)
         slots (into (vec props) (map first pairs))]
     (let [defs (atom [])
           out (if (seq body)
