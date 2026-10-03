@@ -504,3 +504,31 @@
     (dom/mount! [placeholder] el)
     (is (= "" (.. el -firstChild -value)))
     (is (= 0 (.. el -firstChild -selectedIndex)))))
+
+;; ---- enumerated attributes take "true"/"false", not presence
+
+(defboth enumerated [d h] [:div {:draggable d :aria-expanded d :aria-hidden h :spellcheck h
+                                  :contenteditable d :disabled d :data-flag d} "x"])
+
+(deftest enumerated-attrs-write-true-and-false
+  (let [el (check! enumerated enumerated-plain [:d :h]
+                   [{:d true :h false} {:d false :h true} {:d nil :h nil} {:d true :h false}])]
+    (is (= {"draggable" "true" "aria-expanded" "true" "aria-hidden" "false" "spellcheck" "false"
+            "contenteditable" "true" "disabled" "" "data-flag" ""}
+           (into {} (map (fn [^js a] [(.-name a) (.-value a)])) (js/Array.from (.. el -firstChild -attributes))))
+        "boolean attributes like disabled keep presence semantics"))
+  (events/set-db! {:d false :h true})
+  (t/flush!)
+  (let [el (container)]
+    (dom/mount! [enumerated] el)
+    (is (= {"draggable" "false" "aria-expanded" "false" "aria-hidden" "true" "spellcheck" "true"
+            "contenteditable" "false"}
+           (into {} (map (fn [^js a] [(.-name a) (.-value a)])) (js/Array.from (.. el -firstChild -attributes))))
+        "false is written for enumerated attributes, removed for the others")))
+
+(defc static-drag [] [] [:li {:draggable true} "x"])
+
+(deftest static-enumerated-attr
+  (let [el (container)]
+    (dom/mount! [static-drag] el)
+    (is (= "<li draggable=\"true\">x</li>" (.-innerHTML el)))))

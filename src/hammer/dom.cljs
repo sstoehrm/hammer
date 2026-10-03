@@ -83,7 +83,8 @@
 (defn- delegate
   "Capture listener on a mount root: runs the __cuiH handlers for the event
   type from target outward (target only for non-bubbling events), stopping at
-  the root or on stopPropagation. The next node is read before each handler,
+  the root or on stopPropagation. A fn handler gets (e el), el the element it
+  is on (currentTarget is the root and read-only). The next node is read before each handler,
   like the browser's precomputed path. Flagged so nested roots run it once."
   [^js e]
   (let [root (.-currentTarget e)
@@ -96,7 +97,7 @@
                 h (some-> (.-__cuiH n) (gobj/get t))]
             (cond
               (vector? h) (events/dispatch h)
-              (fn? h) (h e))
+              (fn? h) (h e n))
             (when-not (.-cancelBubble e) (recur nxt))))))))
 
 (defonce ^:private new-types (js/Set.))
@@ -151,9 +152,16 @@
     (let [v (if (= n "value") (str (or v "")) (boolean v))]
       (when (not= v (gobj/get el n)) (gobj/set el n v)))))
 
+(defn- enumerated?
+  "Attributes whose value is the string \"true\" or \"false\", not presence."
+  [n]
+  (or (= n "draggable") (= n "spellcheck") (= n "contenteditable") (str/starts-with? n "aria-")))
+
 (defn- set-plain! [^js el n v]
   (cond
-    (or (nil? v) (false? v)) (.removeAttribute el n)
+    (nil? v) (.removeAttribute el n)
+    (and (boolean? v) (enumerated? n)) (.setAttribute el n (if v "true" "false"))
+    (false? v) (.removeAttribute el n)
     (true? v) (.setAttribute el n "")
     :else (.setAttribute el n (str v))))
 

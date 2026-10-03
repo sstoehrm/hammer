@@ -94,3 +94,15 @@
     (click! (.querySelector a "#a"))
     (is (= [:a] @log))
     (is (= #{"click"} (set (.from js/Array (.-__cuiT a)))))))
+
+(deftest fn-handlers-get-their-element
+  (let [el (container)
+        got (atom [])]
+    (dom/mount! [:div [:button#b {:on-click (fn [e owner] (swap! got conj [(.-id (.-target e)) (.-id owner)]))}
+                       [:span#s "x"]]
+                 [:i#one {:on-click #(swap! got conj [:one-arg (.-id (.-target %))])}]]
+                el)
+    (click! (.querySelector el "#s"))
+    (click! (.querySelector el "#one"))
+    (is (= [["s" "b"] [:one-arg "one"]] @got)
+        "the second arg is the element the handler is on; one-arg fns still work")))
