@@ -6,12 +6,18 @@ errors, testing, and Canvas 2D / WebGL2 drawing. For *why* it is fast, see
 
 ## Setup
 
-hammer is a git dependency and needs no npm packages of its own. In `deps.edn`:
+hammer is a git dependency and needs no npm packages of its own. In `deps.edn`,
+pin a release tag and the commit it points at (`git rev-parse --short v0.1.0`,
+or the release page on GitHub):
 
 ```clojure
 io.github.sstoehrm/hammer {:git/url "git@github.com:sstoehrm/hammer.git"
-                           :git/sha "<commit>"}
+                           :git/tag "v0.1.0"
+                           :git/sha "<short sha of v0.1.0>"}
 ```
+
+The repository is private for now, so the SSH URL needs a GitHub key with
+access to it.
 
 With shadow-cljs, set `:deps true` in `shadow-cljs.edn` so it reads `deps.edn`
 (and put `thheller/shadow-cljs` there too). Require `hammer.core`; the build's
@@ -279,8 +285,12 @@ and a jar build on every push to `main` and every pull request.
 
 `.github/workflows/release.yml` then checks the tag, runs the tests, builds
 `target/hammer-0.1.0.jar` and creates a GitHub release with the jar attached.
-When the repository secrets `CLOJARS_USERNAME` and `CLOJARS_PASSWORD` (a Clojars
-deploy token) are set, it also deploys `io.github.sstoehrm/hammer` to Clojars.
+Apps use the tag through the git coordinate above.
+
+Clojars is optional and off: the workflow deploys `io.github.sstoehrm/hammer`
+there only when the repository secrets `CLOJARS_USERNAME` and
+`CLOJARS_PASSWORD` (a Clojars deploy token) are set. A Clojars jar is public,
+source included.
 Locally: `bb jar 0.1.0`, or `clojure -T:build deploy :version '"0.1.0"'`.
 
 The repository-local `hammer-internals` skill (`.claude/skills/`) explains the

@@ -50,7 +50,9 @@ No clue. Use with caution.
 
 ## TODO
 
-- [ ] First release: tag `v0.1.0` (GitHub release with the jar, and Clojars).
+- [ ] First release: tag `v0.1.0` (GitHub release with the jar; use it via the
+  git tag).
+- [ ] Publish on Clojars once the git releases are verified.
 - [ ] A built-in HTTP effect (`fetch`-based `:http`), so apps don't each write one.
 - [ ] SVG: elements are created with `createElement`, so `<svg>` content does not
   render yet.
