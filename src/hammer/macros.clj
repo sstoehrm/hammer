@@ -211,10 +211,13 @@
 
       (contains? plain-macros h) (scan* locals form)
 
-      ;; any other macro may bind locals: look at its expansion (not emitted)
+      ;; any other macro may bind locals: look at its expansion (not emitted).
+      ;; It sees the body's locals; one that throws here (it is expanded again,
+      ;; in place, by the real compile) is scanned as written.
       (and (symbol? (first form)) (not (contains? locals (first form)))
            (cljs.analyzer/get-expander (first form) (:env ctx)))
-      (let [x (cljs.analyzer/macroexpand-1 (:env ctx) form)]
+      (let [env (update (:env ctx) :locals merge (into {} (map (fn [l] [l {:name l}])) locals))
+            x (try (cljs.analyzer/macroexpand-1 env form) (catch Exception _ form))]
         (if (identical? x form) (scan* locals form) (scan ctx locals x)))
 
       :else (scan* locals form))))

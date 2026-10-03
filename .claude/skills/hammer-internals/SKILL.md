@@ -94,12 +94,14 @@ watched). Only subtrees containing a deref are scanned. Binders are modeled on
 `let`/`let*`/`loop`/`when-let`/`if-let` (else branch outside)/…/`for`/`doseq` (with
 `:let`), `letfn` and `try`/`catch`; binding-free core macros (`when`, `cond`, `case`,
 `->`, `binding`, …) are scanned as written; any other macro is expanded for the scan
-only. Destructuring is over-approximated (every symbol, and the names in
+only (so it runs twice: here, with the body's locals added to `&env`, and in the real
+compile; one that throws during the scan is scanned unexpanded). Destructuring is over-approximated (every symbol, and the names in
 `:keys`/`:syms`/`:strs`). Only plain user vars are auto-bound: not `js/…`,
 `cljs.core`, macros, fns (`:fn-var`) or dynamic vars. Not tracked: props and bindings
 (even ones bound later in the vector), locals, derefs inside `fn`/`#()` (render-time
 lambdas like `(map (fn …))` included), `quote`/`comment`, `@^:once g`, non-symbol
-targets, and derefs in helper fns. `@hammer.state/app-db` is never auto-bound (it would
+targets, derefs in helper fns, and vars not yet defined where the component is
+(cljs warns "undeclared Var" there anyway). `@hammer.state/app-db` is never auto-bound (it would
 re-render on every db change): it emits the analyzer warning
 `:hammer.macros/app-db-deref` at the nearest enclosing form's line (bound on at the
 warning site, so plain cljs builds show it too unless set to `false`).

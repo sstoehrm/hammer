@@ -12,7 +12,7 @@
             [hammer.cells :as cells]
             [hammer.core :refer [defc]])
   (:require-macros [hammer.macro-probe :refer [expand-warnings]]
-                   [hammer.tpl-macros :refer [with-local local?]]))
+                   [hammer.tpl-macros :refer [with-local local? need-local]]))
 
 (use-fixtures :each {:before t/reset-app!})
 
@@ -186,3 +186,14 @@
     (swap! cart conj 2)
     (t/flush!)
     (is (= "<i>2</i>" (.-innerHTML el)))))
+
+(defc validating [] [] (let [k 1] [:i (need-local k (+ k (count @cart)))]))
+
+(deftest a-macro-that-checks-its-env-still-compiles
+  (reset! cart [1])
+  (is (= 1 (nspecs validating)))
+  (let [el (container)]
+    (dom/mount! [validating] el)
+    (swap! cart conj 2)
+    (t/flush!)
+    (is (= "<i>3</i>" (.-innerHTML el)))))

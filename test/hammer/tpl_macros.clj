@@ -18,3 +18,10 @@
   then body."
   [sym & body]
   `(str ~(contains? (:locals &env) sym) "/" ~@body))
+
+(defmacro need-local
+  "Throws at expansion unless sym is a local there, then body."
+  [sym & body]
+  (when-not (contains? (:locals &env) sym)
+    (throw (ex-info (str "not a local: " sym) {})))
+  `(do ~@body))
