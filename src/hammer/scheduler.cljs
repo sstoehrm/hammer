@@ -1,5 +1,6 @@
 (ns hammer.scheduler
-  "Dirty instances, flushed in one microtask after they are marked, parents first.")
+  "Dirty instances, flushed in one microtask after they are marked, parents first."
+  (:require [hammer.log :as log]))
 
 (deftype State [^:mutable pending ^:mutable run])
 
@@ -27,7 +28,7 @@
                        (try
                          (run x)
                          (catch :default e
-                           (js/console.error "hammer: update failed" e)))))))))
+                           (log/report! :error "hammer: update failed" e)))))))))
 
 (defn schedule! [^js inst]
   (when-not (.-dirty inst)

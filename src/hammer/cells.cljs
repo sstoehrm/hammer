@@ -3,7 +3,8 @@
   Marking is eager; recomputation is lazy (refresh!)."
   (:require [hammer.state :as state]
             [hammer.trie :as trie]
-            [hammer.scheduler :as sched]))
+            [hammer.scheduler :as sched]
+            [hammer.log :as log]))
 
 ;; A component that renders itself (e.g. a canvas) instead of through hammer.dom.
 ;; run: (fn [inst]) on marks and prop changes, must clear (.-dirty inst);
@@ -80,7 +81,7 @@
   (try
     (call f vals deps)
     (catch :default e
-      (js/console.error "hammer: render failed in" (.-cname c) e)
+      (log/report! :error (str "hammer: render failed in " (.-cname c)) e)
       failed)))
 
 (defn ^Instance create
@@ -255,7 +256,9 @@
     (.forEach entries (fn [[el f]]
                         (try (f)
                              (catch :default e
-                               (js/console.error "hammer: unmount failed for" el e)))))))
+                               (log/report! :error (str "hammer: unmount failed for " (.-nodeName ^js el)
+                                                                       (when (seq (.-id ^js el)) (str "#" (.-id ^js el))))
+                                                            e)))))))
 
 (defonce ^:private default-run (volatile! nil))
 

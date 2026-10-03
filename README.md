@@ -24,17 +24,26 @@ and each re-renders by diffing only its own hiccup.
 | `(reg-event id (fn [db & args] effects))` | effects: `:db`, `:dispatch` (one event), any `reg-fx` key |
 | `(reg-fx k (fn [value]))` | side effects |
 | `(dispatch ev)` / `(dispatch-sync ev)` | queued (microtask) / immediate + render |
-| `(defc name [props] [bindings] body)` | see above; keys via `^{:key k}` |
+| `(defc name [props] [bindings] body)` | see above; keys via `^{:key k}` (or `:key` in an element's attrs) |
 | `(mount! hiccup el db)` | set db, render into `el` |
 | `(mount! hiccup el)` | render into `el`, keeping the current db |
+| `(on-error! (fn [{:keys [level message error]}]))` | replaces the console as the place hammer reports to; `nil` restores it |
 
 Hiccup: `:on-<dom-event>` takes an event vector or fn; `:ref` fn gets the element,
 and `nil` on removal, so write it as `#(some-> % .focus)` rather than assuming a
 non-nil element. Handlers run from one capture-phase listener per event type on
 the `mount!` container, so `(.-currentTarget e)` is that container; use
 `(.-target e)` or close over what you need. `:class` string or collection;
-`:style` map. SVG is not supported in v1 — elements are created with
-`createElement`.
+`:style` map of CSS property names (`:background-color`; dev builds warn on
+`:backgroundColor`) or a CSS string. SVG is
+not supported in v1 — elements are created with `createElement`.
+
+Errors: hammer does not throw for a failing handler, fx, render or draw, or for
+a mistake like a missing handler or a handler that returns `db` instead of
+`{:db db}`. It reports it (`level` `:error` or `:warn`, a `"hammer: …"`
+`message`, the caught `error` or `nil`) and keeps the rest of the app running.
+The default reporter is the browser console; `on-error!` replaces it, e.g. to
+send errors to a service or show them on the page.
 
 Literal hiccup in a `defc` body compiles to templates: the static structure is
 built once and cloned per instance, and an update writes only the changed
@@ -74,10 +83,18 @@ running app already has, instead of resetting it.
 - `(flush!)` — drains queued events, then renders until nothing is dirty
   (synchronous equivalent of the event + render microtasks). `flush!` alone
   never draws `defdraw`/`defloop` components — they only draw at a frame.
+  It then throws if hammer reported an error since the last `flush!`
+  (`ex-info` with `{:errors [...]}`); warnings never throw. Loading
+  `hammer.testing` turns this on, whatever `on-error!` is set to.
+- `(expect-errors f)` — runs `(f)` and returns the reports made during it
+  instead of letting them fail `flush!`; for tests of error behaviour.
+- `(check-errors!)` — the same check on its own; `frame!` runs it after its
+  draw frame. Use it (e.g. as an `:after` fixture) in tests that only call
+  `dispatch-sync`, which never throws for a reported error.
 - `(renders c)` / `(reset-renders! & cs)` — a component's render count since
   the last reset; use to assert that only the expected components re-rendered.
-- `(reset-app!)` — unmounts every root and empties `app-db`; use as a
-  `:before` fixture between tests.
+- `(reset-app!)` — unmounts every root, empties `app-db` and drops unchecked
+  reports; use as a `:before` fixture between tests.
 - `(use-fake-frames!)` — replaces `requestAnimationFrame` so `defdraw`/`defloop`
   components draw only when the test calls `frame!`, never on a real animation
   frame; add it to the same `:before` fixture as `reset-app!` in any test that

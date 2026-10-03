@@ -9,7 +9,8 @@
             [hammer.scheduler :as sched]
             [hammer.dom :as dom]
             [hammer.testing :as t]
-            [hammer.core :as h :refer [defc is?]])
+            [hammer.core :as h :refer [defc is?]]
+            [hammer.test-util :refer [capture-errors]])
   (:require-macros [hammer.macro-probe :refer [expand-error]]))
 
 (use-fixtures :each {:before t/reset-app!})
@@ -157,14 +158,9 @@
 
 (deftest is?-value-throw-is-a-nil-unsubscribed-slot
   (let [el (container)
-        logs (atom [])
-        orig js/console.error]
-    (set! js/console.error (fn [& a] (swap! logs conj (vec (take 2 a)))))
-    (try
-      (h/mount! [eq-throws] el {:m 1})
-      (finally (set! js/console.error orig)))
+        logs (capture-errors (fn [_] (h/mount! [eq-throws] el {:m 1})))]
     (is (= "<i>true/</i>" (.-innerHTML el)))
-    (is (= [["hammer: render failed in" "eq-throws"]] @logs))
+    (is (= ["hammer: render failed in eq-throws"] (mapv first logs)))
     (is (= 1 (.-refs state/paths)))))
 
 (deftest constant-paths-are-built-once

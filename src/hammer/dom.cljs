@@ -6,7 +6,8 @@
   (:require [clojure.string :as str]
             [goog.object :as gobj]
             [hammer.cells :as cells]
-            [hammer.events :as events]))
+            [hammer.events :as events]
+            [hammer.log :as log]))
 
 ;; t :text/:el/:comp, or :tpl (from defc): tag = Tpl, attrs = hole values,
 ;; args (:comp) = the whole hiccup vector, props from index 1;
@@ -65,6 +66,10 @@
         (let [[tag id cls] (parse-tag h)
               a? (map? (nth x 1 nil))
               attrs (if a? (nth x 1) {})
+              ;; :key in attrs is the element's key (metadata wins), never an attribute
+              ak (when a? (:key attrs))
+              k (if (nil? k) ak k)
+              attrs (if (some? ak) (dissoc attrs :key) attrs)
               c (class-str (:class attrs))
               c (if cls (if c (str cls " " c) cls) c)
               attrs (cond-> attrs id (assoc :id id) c (assoc :class c))]
@@ -118,18 +123,33 @@
     (when reg? (.add new-types t))
     (gobj/set hs t v)))
 
-(defn- set-style! [^js el old v]
+(defn- set-style!
+  "A map of CSS property names is diffed against old; a string replaces
+  cssText."
+  [^js el old v]
   (let [s (.-style el)]
-    (doseq [[sk sv] v]
-      (when (not= sv (get old sk)) (.setProperty s (name sk) (str sv))))
-    (doseq [[sk _] old]
-      (when-not (contains? v sk) (.removeProperty s (name sk))))))
+    (if (string? v)
+      (set! (.-cssText s) v)
+      (let [old (if (string? old) (do (set! (.-cssText s) "") nil) old)]
+        (doseq [[sk sv] v]
+          (when (not= sv (get old sk))
+            (let [n (name sk)]
+              (when (and ^boolean goog/DEBUG (re-find #"[A-Z]" n) (not (str/starts-with? n "--")))
+                (log/report! :warn (str "hammer: :style keys are CSS names, got " (pr-str sk)) nil))
+              (.setProperty s n (str sv)))))
+        (doseq [[sk _] old]
+          (when-not (contains? v sk) (.removeProperty s (name sk))))))))
 
 (defn- set-prop!
   "Writes :value/:checked/:selected (n is its name) only if the live element differs."
   [^js el n v]
-  (let [v (if (= n "value") (str (or v "")) (boolean v))]
-    (when (not= v (gobj/get el n)) (gobj/set el n v))))
+  (if (and (= n "value") (= "OPTION" (.-tagName el)))
+    ;; an option's value property reads its text when the attribute is
+    ;; missing, so compare and write the attribute: the markup always has it
+    (let [v (str (or v ""))]
+      (when (not= v (.getAttribute el "value")) (.setAttribute el "value" v)))
+    (let [v (if (= n "value") (str (or v "")) (boolean v))]
+      (when (not= v (gobj/get el n)) (gobj/set el n v)))))
 
 (defn- set-plain! [^js el n v]
   (cond
@@ -172,7 +192,7 @@
   (try
     (f el)
     (catch :default e
-      (js/console.error "hammer: :ref failed" e))))
+      (log/report! :error "hammer: :ref failed" e))))
 
 (defn- run-refs!
   "Calls :ref fns queued by create! once their elements are in the document."
@@ -397,7 +417,7 @@
   (try
     (normalize (cells/render inst))
     (catch :default e
-      (js/console.error "hammer: render failed in" (.-cname ^cells/Comp (.-comp inst)) e)
+      (log/report! :error (str "hammer: render failed in " (.-cname ^cells/Comp (.-comp inst))) e)
       nil)))
 
 (defn- mount-inst! [^cells/Instance inst]
@@ -418,7 +438,7 @@
               (try
                 ((.-destroy h) inst)
                 (catch :default e
-                  (js/console.error "hammer: destroy failed in" (.-cname ^cells/Comp (.-comp v)) e)
+                  (log/report! :error (str "hammer: destroy failed in " (.-cname ^cells/Comp (.-comp v))) e)
                   ;; whatever the host left undone, its subscriptions go
                   (when (.-mounted inst) (cells/destroy! inst))))
               (do (unmount! (.-vnode inst))
@@ -447,7 +467,7 @@
   (when (.-mounted inst)
     (when (try (cells/refresh! inst)
                (catch :default e
-                 (js/console.error "hammer: render failed in" (.-cname ^cells/Comp (.-comp inst)) e)
+                 (log/report! :error (str "hammer: render failed in " (.-cname ^cells/Comp (.-comp inst))) e)
                  false))
       (when-let [v (body-vnode inst)]
         (let [old (.-vnode inst)]
@@ -458,14 +478,18 @@
 
 (defn- key-index
   "key → index when every kid is keyed and keys are unique, else nil (warns on
-  a duplicate): a js/Map when every key is a number or string (the same
-  value semantics as =), else a persistent map. The verdict is kept on the
-  array, so when these kids become the old side of the next patch they are
-  not checked again."
+  a duplicate, or when only some kids are keyed): a js/Map when every key is
+  a number or string (the same value semantics as =), else a persistent map.
+  The verdict is kept on the array, so when these kids become the old side of
+  the next patch they are not checked again."
   [^js kids]
   (let [n (alength kids)
         key-at (fn [i] (.-key ^VNode (aget kids i)))
-        dup (fn [] (js/console.warn "hammer: duplicate keys, falling back to index diff"))
+        dup (fn [] (log/report! :warn "hammer: duplicate keys, falling back to index diff" nil))
+        unkeyed (fn [] (log/report! :warn "hammer: some list items have no key, falling back to index diff" nil))
+        _ (when (and ^boolean goog/DEBUG (pos? n) (nil? (key-at 0))
+                     (loop [i 1] (and (< i n) (or (some? (key-at i)) (recur (inc i))))))
+            (unkeyed))
         m (when (and (pos? n) (some? (key-at 0)))
             (if (loop [i 0] (or (== i n) (and (js-key? (key-at i)) (recur (inc i)))))
               (let [m (js/Map.)]
@@ -478,7 +502,7 @@
                 (if (< i n)
                   (let [k (key-at i)]
                     (cond
-                      (nil? k) nil
+                      (nil? k) (unkeyed)
                       (contains? m k) (dup)
                       :else (recur (inc i) (assoc! m k i))))
                   m))))]
@@ -618,7 +642,7 @@
                     ((.-run h) inst)
                     (catch :default e
                       (set! (.-dirty ^cells/Instance inst) false)
-                      (js/console.error "hammer: update failed in" (.-cname ^cells/Comp (.-comp nu)) e)))
+                      (log/report! :error (str "hammer: update failed in " (.-cname ^cells/Comp (.-comp nu))) e)))
                   (update-inst! inst)))))))
 
 ;; ---- roots
@@ -657,7 +681,7 @@
      (try
        (update-inst! inst)
        (catch :default e
-         (js/console.error "hammer: update failed in" (.-cname ^cells/Comp (.-comp inst)) e))
+         (log/report! :error (str "hammer: update failed in " (.-cname ^cells/Comp (.-comp inst))) e))
        (finally
          (when (pos? (.-size new-types)) (listen-root! (root-of inst)))
          (.clear new-types)

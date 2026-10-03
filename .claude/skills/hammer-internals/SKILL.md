@@ -29,7 +29,8 @@ and an example are in `README.md`; this skill covers what only the source shows.
 | `canvas.cljs` | Canvas 2D facade: re-exports `hammer.app` and `draw/mount!`, registers the `:canvas` backend (`getContext "2d"`, `setTransform` for DPR); `canvas.clj` has its thin `defdraw`/`defloop` macros (call `macros/draw-def`) |
 | `gl.cljs` | WebGL2 facade: registers the `:gl` backend — one `WebGL2RenderingContext` per component (`getContext "webgl2" context-attrs`), viewport set before every draw, `:fallback`/`:on-unsupported` when unavailable (logged once per page), `webglcontextlost`/`webglcontextrestored` handling (`:dispose` / re-`:init` and redraw, loop clock freezes while lost), and releasing the context (`WEBGL_lose_context`) on unmount for a canvas hammer created (an adopted canvas keeps its context across remounts — see `State`'s `adopted?`); `gl.clj` has its `defdraw`/`defloop` macros |
 | `state.cljs` | `app-db` atom and root trie node |
-| `testing.cljs` | sync `flush!`, render counters, `reset-app!` |
+| `log.cljs` | `report!` — every `hammer:` error/warning goes through it (no hammer deps, so every ns can require it): to the test collector when on, then to the reporter (`on-error!`, default console) |
+| `testing.cljs` | sync `flush!` and `frame!` (both end with `check-errors!`: throw on collected `:error` reports), `expect-errors`, render counters, `reset-app!`; loading it turns on `hammer.log`'s collector |
 
 ## Update pipeline
 
@@ -59,7 +60,8 @@ per-hole regions. Update writes only holes whose value is not `identical?`;
 | literal string/number/keyword/`true` child, literal attr value | static in the skeleton (`nil`/`false` children vanish) |
 | other child expression | kid hole: text node for scalars, a region of vnodes for vectors/seqs/templates (switches at runtime) |
 | sole child of its element | kid hole owning the element (no anchor); otherwise the hole's text node is the region's end anchor |
-| `:class`, `:style`, other attrs with non-literal value | attr hole (`:class` joined with the tag's classes) |
+| `:class`, `:style`, other attrs with non-literal value | attr hole (`:class` joined with the tag's classes; a string `:style` sets `cssText`) |
+| `:key` in a keyword-keyed literal attrs map | the template's key (unless `^{:key}` metadata is given), removed from the attrs; `normalize` does the same for plain hiccup |
 | `:on-*`, `:ref`, `:value/:checked/:selected` | always holes (expandos/properties aren't cloned) |
 | non-literal second item `[:td x]` | kid hole, but the whole template renders as plain hiccup whenever `x` is a map |
 | attrs map with non-keyword keys, non-keyword tag | plain hiccup (children still compiled) |
@@ -150,16 +152,23 @@ can't draw. On `webglcontextrestored` it calls `draw/queue!`, which requests a f
 | Child re-renders on every parent render | inline `fn` prop is never `=`; pass an event vector or bind the fn in the parent |
 | `(atom x)` ignores new `x` | the init runs once per instance; remount via a `^{:key}` change in a fully keyed list |
 | `(vector a b)` vs `[a b]` | the literal is a path; the call is a value |
-| "no fx registered for :k — did the handler return db" (logged, no throw) | handler returned `db`: `:db` is never set, every top-level key runs as an fx (a key matching a registered fx **runs it**), and a `:dispatch` key gets dispatched |
-| List items keep the wrong DOM | keyed diff needs **every** kid keyed, with unique keys; otherwise index diff (+ warn) |
+| "handler for :x returned no known effect keys (…)" (reported, no throw) | handler returned `db` (or its only fx was never `reg-fx`ed): nothing runs. If any key is `:db`, `:dispatch` or a registered fx, the map is processed normally and each unknown key reports "no fx registered for" |
+| List items keep the wrong DOM | keyed diff needs **every** kid keyed, with unique keys; otherwise index diff (+ warn for duplicates, and in dev builds (`goog.DEBUG`) for a list mixing keyed and unkeyed kids) |
 | Input value "fights" typing | `:value/:checked/:selected` are compared to the live element, so the db must hold the current value |
 | `:ref` gets `nil` | called with `nil` on unmount; refs run after insertion into the document |
 | Body shows stale global/db state | the body re-runs only when a slot it names changes; a raw `@global` or `@app-db` in the body never triggers one. Bind it as a slot |
 | Extra empty text node in `childNodes` | a `nil` kid hole, or a hiccup-valued hole among siblings, keeps its (empty) text node; invisible to `innerHTML`/`children`/`:empty` |
-| Throw doesn't crash the app | binding init → nil slot; body throw → old DOM kept; the runner catches per instance. Check the console for `hammer:` |
+| Throw doesn't crash the app | binding init → nil slot; body throw → old DOM kept; the runner catches per instance. It is reported through `hammer.log/report!`: the console (or the `on-error!` reporter), and a throw from the next `testing/flush!` |
+| `:style {:backgroundColor …}` does nothing | style keys are CSS names (`:background-color`); dev builds warn. A string `:style` sets `cssText` |
 
 ## Testing
 
 Use `hammer.testing/flush!` (drain + flush, max 10 rounds) instead of awaiting
-microtasks. Use `renders`/`reset-renders!` to assert which components re-rendered and
-`reset-app!` as a `:before` fixture. Run with `npm test`; `bb loc` reports the core size.
+microtasks; it (and `frame!`) throws when hammer reported an `:error` since the
+last check. `dispatch-sync` alone never throws for one: end such tests with
+`check-errors!` (or use it as an `:after` fixture).
+Wrap code that triggers errors on purpose in `expect-errors` (it returns the
+reports) or `hammer.test-util/capture-errors`/`capture-warnings` (which do that
+and also return the console args). Use `renders`/`reset-renders!` to assert which
+components re-rendered and `reset-app!` as a `:before` fixture. Run with
+`npm test`; `bb loc` reports the core size.

@@ -6,7 +6,8 @@
             [hammer.events :as events]
             [hammer.dom :as dom]
             [hammer.testing :as t]
-            [hammer.core :refer [defc]])
+            [hammer.core :refer [defc]]
+            [hammer.test-util :refer [capture-errors]])
   (:require-macros [hammer.tpl-macros :refer [defboth]]))
 
 (use-fixtures :each {:before t/reset-app!})
@@ -332,14 +333,10 @@
 (deftest compiled-body-throw-keeps-dom
   (reset! state/app-db {:n 1})
   (let [el (container)
-        orig js/console.error
-        logs (atom [])]
-    (dom/mount! [boom] el)
-    (set! js/console.error (fn [& a] (swap! logs conj (vec (take 2 a)))))
-    (try (events/dispatch-sync [:set :n 2])
-         (finally (set! js/console.error orig)))
+        _ (dom/mount! [boom] el)
+        logs (capture-errors (fn [_] (events/dispatch-sync [:set :n 2])))]
     (is (= "<p title=\"1\">1</p>" (.-innerHTML el)))
-    (is (= [["hammer: render failed in" "boom"]] @logs))
+    (is (= ["hammer: render failed in boom"] (mapv first logs)))
     (events/dispatch-sync [:set :n 3])
     (is (= "<p title=\"3\">3</p>" (.-innerHTML el)))))
 
@@ -404,3 +401,106 @@
       (events/dispatch-sync [:set :ks ["c" "a" "b"]])
       (is (= [c a b] (vec (.. el -firstChild -children))))
       (is (= "<ul><b>c</b><b>a</b><b>b</b></ul>" (.-innerHTML el))))))
+
+;; ---- :key in the attrs map is the element's key, not an attribute
+
+(defn- attr-keyed-hiccup [ks] [:ul (for [k ks] [:li {:key k :class "row"} k])])
+(defc attr-keyed [] [ks [:ks]] [:ul (for [k ks] [:li {:key k :class "row"} k])])
+;; a call in body position is not compiled: plain hiccup through normalize
+(defc attr-keyed-runtime [] [ks [:ks]] (attr-keyed-hiccup ks))
+(defc both-keys [] [ks [:ks]] [:ul (for [k ks] ^{:key (- k)} [:li {:key 0} k])])
+
+(deftest attrs-key-moves-nodes-compiled-and-plain
+  (doseq [[label view] [["compiled" attr-keyed] ["plain" attr-keyed-runtime]]]
+    (reset! state/app-db {:ks [1 2 3]})
+    (let [el (container)]
+      (dom/mount! [view] el)
+      (let [[a b c] (vec (.querySelectorAll el "li"))
+            warns (t/expect-errors #(events/dispatch-sync [:set :ks [3 1 2]]))]
+        (is (= [c a b] (vec (.querySelectorAll el "li"))) (str label ": moved, not re-rendered in place"))
+        (is (= [] warns) (str label ": no duplicate/partial key warning"))
+        (is (= "<ul><li class=\"row\">3</li><li class=\"row\">1</li><li class=\"row\">2</li></ul>"
+               (.-innerHTML el))
+            (str label ": no key attribute"))))))
+
+(deftest metadata-key-wins-over-attrs-key
+  (reset! state/app-db {:ks [1 2]})
+  (let [el (container)]
+    (dom/mount! [both-keys] el)
+    (let [warns (t/expect-errors #(events/dispatch-sync [:set :ks [2 1]]))]
+      (is (= [] warns) "every attrs :key is 0, so using it would warn about duplicates"))
+    (is (= "<ul><li>2</li><li>1</li></ul>" (.-innerHTML el)))))
+
+(defc string-attr-keyed [] [ks [:ks]] [:ul (for [k ks] [:li {:key k "data-x" "1"} k])])
+
+(deftest attrs-key-in-a-map-with-string-keys
+  (reset! state/app-db {:ks [1 2]})
+  (let [el (container)]
+    (dom/mount! [string-attr-keyed] el)
+    (let [[a b] (vec (.querySelectorAll el "li"))]
+      (is (= [] (t/expect-errors #(events/dispatch-sync [:set :ks [2 1]]))))
+      (is (= [b a] (vec (.querySelectorAll el "li"))))
+      (is (= "<ul><li data-x=\"1\">2</li><li data-x=\"1\">1</li></ul>" (.-innerHTML el))))))
+
+;; ---- :style as a string; camelCase keys warn
+
+(defboth string-style [s] [:p {:style s} "x"])
+
+(deftest string-style-and-switching-to-a-map
+  (let [el (check! string-style string-style-plain [:s]
+                   [{:s "color: red"} {:s {:color "blue"}} {:s "margin: 1px"}
+                    {:s nil} {:s "color: red"} {:s {:margin "2px"}}])]
+    (is (= "<p style=\"margin: 2px;\">x</p>" (.-innerHTML el)) "the string's color is gone after the map")))
+
+(deftest string-style-is-applied
+  (reset! state/app-db {:s "color: red"})
+  (let [el (container)]
+    (dom/mount! [string-style] el)
+    (is (= "red" (.. el -firstChild -style -color)))
+    (events/dispatch-sync [:set :s {:margin "1px"}])
+    (is (= ["" "1px"] [(.. el -firstChild -style -color) (.. el -firstChild -style -margin)]))
+    (events/dispatch-sync [:set :s "padding: 3px"])
+    (is (= ["" "3px"] [(.. el -firstChild -style -margin) (.. el -firstChild -style -padding)]))))
+
+(defc camel-style [] [c [:c]] [:p {:style {:backgroundColor c :--myVar "1"}} "x"])
+
+(deftest camel-case-style-keys-warn
+  (reset! state/app-db {:c "red"})
+  (let [warns (t/expect-errors #(dom/mount! [camel-style] (container)))]
+    (is (= [{:level :warn :message "hammer: :style keys are CSS names, got :backgroundColor" :error nil}] warns)
+        "custom properties (--x) keep their case")))
+
+;; ---- <option> :value is always in the markup
+
+(defboth options [c v] [:select {:value c} (for [o ["a" "b"]] ^{:key o} [:option {:value (if (= o "b") v o)} o])])
+
+(deftest option-value-is-an-attribute
+  (let [el (check! options options-plain [:c :v]
+                   [{:c "a" :v "b"} {:c "b" :v "b"} {:c "b" :v "z"} {:c "a" :v nil}])]
+    (is (= ["a" ""] (mapv #(.getAttribute % "value") (.querySelectorAll el "option")))
+        "nil writes value=\"\", as for an input, so a placeholder option keeps the empty value"))
+  (reset! state/app-db {:c "b" :v "b"})
+  (let [el (container)]
+    (dom/mount! [options] el)
+    (is (= "<select><option value=\"a\">a</option><option value=\"b\">b</option></select>" (.-innerHTML el))
+        "written even when the value equals the text")
+    (is (= "b" (.. el -firstChild -value)) "the select still picks it")))
+
+(defc nested-key [] [x [:x]] [:div [:span {:key x :title x} "a"]])
+
+(deftest nested-attrs-key-is-not-an-attribute
+  (reset! state/app-db {:x "7"})
+  (let [el (container)]
+    (dom/mount! [nested-key] el)
+    (is (= "<div><span title=\"7\">a</span></div>" (.-innerHTML el)))
+    (events/dispatch-sync [:set :x "8"])
+    (is (= "<div><span title=\"8\">a</span></div>" (.-innerHTML el)))))
+
+(defc placeholder [] [v [:v]] [:select {:value v} [:option {:value nil} "None"] [:option {:value "a"} "A"]])
+
+(deftest placeholder-option-keeps-the-empty-value
+  (reset! state/app-db {:v ""})
+  (let [el (container)]
+    (dom/mount! [placeholder] el)
+    (is (= "" (.. el -firstChild -value)))
+    (is (= 0 (.. el -firstChild -selectedIndex)))))

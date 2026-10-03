@@ -5,7 +5,8 @@
   State in the instance's vnode field."
   (:require [clojure.string :as str]
             [hammer.cells :as cells]
-            [hammer.events :as events]))
+            [hammer.events :as events]
+            [hammer.log :as log]))
 
 ;; setup!: (fn [st render] → node) once the canvas exists; draw-arg: (fn [st])
 ;; → first draw-fn arg, nil to skip this draw; resized!: (fn [st]) after the
@@ -213,7 +214,7 @@
       (set! (.-res st) (init arg i))
       (set! (.-inited st) true)
       (catch :default e
-        (js/console.error "hammer: init failed in" (cname st) e)
+        (log/report! :error (str "hammer: init failed in " (cname st)) e)
         (set! (.-inited st) :failed)))
     (set! (.-inited st) true)))
 
@@ -223,7 +224,7 @@
   (when (true? (.-inited st))
     (when-let [d (:dispose (.-opts st))]
       (try (d (.-res st))
-           (catch :default e (js/console.error "hammer: dispose failed in" (cname st) e)))))
+           (catch :default e (log/report! :error (str "hammer: dispose failed in " (cname st)) e)))))
   (set! (.-res st) nil)
   (set! (.-inited st) false))
 
@@ -248,7 +249,7 @@
         (try
           (if (contains? (.-opts st) :init) (f arg i (.-res st)) (f arg i))
           (catch :default e
-            (js/console.error "hammer: draw failed in" (cname st) e)))))
+            (log/report! :error (str "hammer: draw failed in " (cname st)) e)))))
     ;; not drawable (zero size, no draw arg yet, e.g. gl context lost, or
     ;; see will-draw?): a loop's clock stands still, :t and :n don't
     ;; advance, and as after a pause the next drawn frame gets :dt 0.
@@ -281,7 +282,7 @@
   [^State st]
   (if-let [out (try (cells/render (.-inst st))
                     (catch :default e
-                      (js/console.error "hammer: render failed in" (cname st) e)
+                      (log/report! :error (str "hammer: render failed in " (cname st)) e)
                       nil))]
     (let [old (.-opts st)
           nu (or (aget out 0) {})]
@@ -309,7 +310,7 @@
   (when (.-mounted inst)
     (when (try (cells/refresh! inst)
                (catch :default e
-                 (js/console.error "hammer: render failed in" (.-cname ^cells/Comp (.-comp inst)) e)
+                 (log/report! :error (str "hammer: render failed in " (.-cname ^cells/Comp (.-comp inst))) e)
                  false))
       (rerender! (.-vnode inst)))))
 
@@ -363,7 +364,7 @@
     (try
       ((.-teardown! ^Backend (.-backend st)) st)
       (catch :default e
-        (js/console.error "hammer: teardown failed in" (cname st) e)))
+        (log/report! :error (str "hammer: teardown failed in " (cname st)) e)))
     (cells/destroy! inst)))
 
 (defn component

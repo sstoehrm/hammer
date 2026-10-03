@@ -5,7 +5,8 @@
             [hammer.events :as events]
             [hammer.dom :as dom]
             [hammer.testing :as t]
-            [hammer.core :refer [defc]]))
+            [hammer.core :refer [defc]]
+            [hammer.test-util :refer [capture-errors capture-warnings]]))
 
 (use-fixtures :each {:before t/reset-app!})
 
@@ -138,14 +139,10 @@
 (deftest render-error-keeps-previous-dom
   (reset! state/app-db {:n 1})
   (let [el (container)
-        logs (atom [])
-        orig js/console.error]
-    (dom/mount! [fragile] el)
-    (set! js/console.error (fn [& a] (swap! logs conj (vec (take 2 a)))))
-    (try (events/dispatch-sync [:set :n 2])
-         (finally (set! js/console.error orig)))
+        _ (dom/mount! [fragile] el)
+        logs (capture-errors (fn [_] (events/dispatch-sync [:set :n 2])))]
     (is (= "<p>1</p>" (.-innerHTML el)))
-    (is (= [["hammer: render failed in" "fragile"]] @logs))
+    (is (= ["hammer: render failed in fragile"] (mapv first logs)))
     (events/dispatch-sync [:set :n 3])
     (is (= "<p>3</p>" (.-innerHTML el)))))
 
@@ -247,14 +244,9 @@
 (deftest child-binding-init-throw-is-isolated
   (reset! state/app-db {:flag false})
   (let [el (container)
-        logs (atom [])
-        orig js/console.error]
-    (set! js/console.error (fn [& a] (swap! logs conj (vec (take 2 a)))))
-    (try
-      (dom/mount! [two-kids] el)
-      (finally (set! js/console.error orig)))
+        logs (capture-errors (fn [_] (dom/mount! [two-kids] el)))]
     (is (= "<div data-flag=\"false\"><i>ok1</i><b>bad2</b></div>" (.-innerHTML el)))
-    (is (= [["hammer: render failed in" "bad-child"]] @logs))
+    (is (= ["hammer: render failed in bad-child"] (mapv first logs)))
     (events/dispatch-sync [:set :flag true])
     (is (= "<div data-flag=\"true\"><i>ok1</i><b>bad2</b></div>" (.-innerHTML el)))))
 
@@ -482,3 +474,44 @@
     (dotimes [_ 200]
       (let [xs (->> (range 20) (filter (fn [_] (< (rnd 10) 6))) shuffle*)]
         (keyed-step! ul xs)))))
+
+;; ---- a list with keyed and unkeyed items warns (it falls back to index diff)
+
+(defc mixed-keys [] [ks [:ks]]
+  [:ul (for [k ks] (if (= k 2) [:li k] ^{:key k} [:li k]))])
+
+(defc head-and-keyed [] [ks [:ks]]
+  [:ul [:li "head"] (for [k ks] ^{:key k} [:li k])])
+
+(deftest partly-keyed-list-warns
+  (reset! state/app-db {:ks [1 2 3]})
+  (let [el (container)
+        _ (dom/mount! [mixed-keys] el)
+        warns (capture-warnings (fn [_] (events/dispatch-sync [:set :ks [3 2 1]])))]
+    (is (= ["hammer: some list items have no key, falling back to index diff"] (mapv first warns)))
+    (is (= "<ul><li>3</li><li>2</li><li>1</li></ul>" (.-innerHTML el)))))
+
+(deftest partly-keyed-list-warns-when-the-first-item-has-no-key
+  (reset! state/app-db {:ks [2 1 3]})
+  (let [el (container)
+        _ (dom/mount! [mixed-keys] el)
+        warns (capture-warnings (fn [_] (events/dispatch-sync [:set :ks [2 3 1]])))]
+    (is (= 1 (count warns)))))
+
+(deftest static-head-before-a-keyed-for-does-not-warn
+  (reset! state/app-db {:ks [1 2]})
+  (let [el (container)
+        _ (dom/mount! [head-and-keyed] el)
+        warns (capture-warnings (fn [_] (events/dispatch-sync [:set :ks [2 1]])))]
+    (is (= [] warns) "the for is its own list in the compiled template")
+    (is (= "<ul><li>head</li><li>2</li><li>1</li></ul>" (.-innerHTML el)))))
+
+(defc plain-list [] [ks [:ks]] [:ul (for [k ks] [:li k])])
+
+(deftest unkeyed-list-stays-silent
+  (reset! state/app-db {:ks [1 2]})
+  (let [el (container)
+        _ (dom/mount! [plain-list] el)
+        warns (capture-warnings (fn [_] (events/dispatch-sync [:set :ks [2 1 3]])))]
+    (is (= [] warns))
+    (is (= "<ul><li>2</li><li>1</li><li>3</li></ul>" (.-innerHTML el)))))

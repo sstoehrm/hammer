@@ -8,12 +8,14 @@
   the same one on a later remount."
   (:require-macros [hammer.gl])
   (:require [hammer.app :as app]
-            [hammer.draw :as draw]))
+            [hammer.draw :as draw]
+            [hammer.log :as log]))
 
 (def reg-event app/reg-event)
 (def reg-fx app/reg-fx)
 (def dispatch app/dispatch)
 (def dispatch-sync app/dispatch-sync)
+(def on-error! app/on-error!)
 (def is? app/is?)
 (def mount! draw/mount!)
 
@@ -33,12 +35,12 @@
           (let [^js wrap (.-wrap ext)]
             (set! (.-textContent wrap) "")
             (.appendChild wrap (render h))))))
-    (catch :default e (js/console.error "hammer: gl fallback failed" e))))
+    (catch :default e (log/report! :error "hammer: gl fallback failed" e))))
 
 (defn- unsupported! [st reason]
   (when-not @logged
     (vreset! logged true)
-    (js/console.error "hammer: WebGL2 unavailable:" reason))
+    (log/report! :error (str "hammer: WebGL2 unavailable: " reason) nil))
   (fallback! st reason))
 
 (draw/register-backend!
@@ -59,8 +61,9 @@
         (let [on-lost (fn [^js e]
                         (.preventDefault e)
                         (set! (.-lost ext) true)
-                        (js/console.warn "hammer: WebGL2 context lost in" (draw/component-name st)
-                                          "-- it stays blank until the browser restores it")
+                        (log/report! :warn (str "hammer: WebGL2 context lost in " (draw/component-name st)
+                                                " -- it stays blank until the browser restores it")
+                                     nil)
                         (draw/dispose! st))
               on-restored (fn [_]
                             (set! (.-lost ext) false)

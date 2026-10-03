@@ -1,11 +1,13 @@
 (ns hammer.app
   "The event API shared by every variant facade (hammer.core, hammer.canvas, hammer.gl)."
-  (:require [hammer.events :as events]))
+  (:require [hammer.events :as events]
+            [hammer.log :as log]))
 
 (def reg-event events/reg-event)
 (def reg-fx events/reg-fx)
 (def dispatch events/dispatch)
 (def dispatch-sync events/dispatch-sync)
+(def on-error! log/on-error!)
 
 (defn is?
   "Only valid as a whole binding init of defc/defdraw/defloop: (is? path v) is

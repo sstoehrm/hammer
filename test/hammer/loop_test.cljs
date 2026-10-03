@@ -6,7 +6,8 @@
             [hammer.draw :as draw]
             [hammer.events :as events]
             [hammer.state :as state]
-            [hammer.testing :as t]))
+            [hammer.testing :as t]
+            [hammer.test-util :refer [capture-errors]]))
 
 (def seen (atom []))
 (def raf-calls (atom 0))
@@ -93,14 +94,12 @@
 
 (deftest a-throwing-loop-keeps-running-and-others-draw
   (reset! state/app-db {:x 1})
-  (let [orig js/console.error]
-    (set! js/console.error (fn [& _]))
-    (try
-      (cv/mount! [crashy] (div))
-      (cv/mount! [steady] (div))
-      (t/frame! 0) (t/frame! 16) (t/frame! 32)
-      (is (= [[:crashy 1] [:steady 1] [:crashy 2] [:crashy 3]] @seen))
-      (finally (set! js/console.error orig)))))
+  (capture-errors
+   (fn [_]
+     (cv/mount! [crashy] (div))
+     (cv/mount! [steady] (div))
+     (t/frame! 0) (t/frame! 16) (t/frame! 32)
+     (is (= [[:crashy 1] [:steady 1] [:crashy 2] [:crashy 3]] @seen)))))
 
 ;; ---- #12: the loop clock stands still while the canvas can't be drawn
 
@@ -122,3 +121,12 @@
   (events/dispatch [::set :sz [10 10]])
   (t/frame! 2000)
   (is (= [[:sized 16 0 3]] @seen) "back from 0x0: t and n continue, dt restarts at 0"))
+
+(defdraw broken-draw [] [] {:size [10 10]} (fn [_ _] (throw (js/Error. "x"))))
+
+(deftest frame-throws-on-errors-from-its-own-frame
+  (cv/mount! [broken-draw] (div))
+  (cv/on-error! (fn [_]))
+  (try
+    (is (thrown-with-msg? js/Error #"draw failed in broken-draw" (t/frame! 0)))
+    (finally (cv/on-error! nil))))
