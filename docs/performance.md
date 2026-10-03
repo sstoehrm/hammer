@@ -78,7 +78,7 @@ draws once. Per-frame state lives in a `volatile!`, which nothing watches.
 Other measurements:
 
 - **Size:** `bb sizes` builds a minimal app per variant with `:advanced`. The
-  DOM build is about 132 KB raw and 31.9 KB gzip, `cljs.core` included. Each
+  DOM build is about 132 KB raw and 32 KB gzip, `cljs.core` included. Each
   bundle carries only its own variant's namespaces. The core is 2,316 lines
   (`bb loc`).
 - **Canvas:** [bench/canvas/RESULTS.md](../bench/canvas/RESULTS.md) compares
