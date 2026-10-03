@@ -142,8 +142,14 @@
 (defn- set-prop!
   "Writes :value/:checked/:selected (n is its name) only if the live element differs."
   [^js el n v]
-  (let [v (if (= n "value") (str (or v "")) (boolean v))]
-    (when (not= v (gobj/get el n)) (gobj/set el n v))))
+  (if (and (= n "value") (= "OPTION" (.-tagName el)))
+    ;; an option's value property reads its text when the attribute is
+    ;; missing, so compare and write the attribute: the markup always has it
+    (cond
+      (nil? v) (.removeAttribute el "value")
+      (not= (str v) (.getAttribute el "value")) (.setAttribute el "value" (str v)))
+    (let [v (if (= n "value") (str (or v "")) (boolean v))]
+      (when (not= v (gobj/get el n)) (gobj/set el n v)))))
 
 (defn- set-plain! [^js el n v]
   (cond

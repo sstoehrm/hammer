@@ -51,7 +51,7 @@ cases listed in the `hammer-app` skill (PR #23).
 | 4 | some list items unkeyed | When a kid list has both keyed and unkeyed items, warn `hammer: some list items have no key, falling back to index diff` (like the duplicate-key warning). A list with no keys stays silent. |
 | 5 | `:key` in the attrs map | Honoured as the element's key (`^{:key}` metadata wins when both are given) and not written as an attribute, in `normalize` and in compiled templates. Components still take keys only from metadata. |
 | 6 | `:style` string / camelCase | A string `:style` is written to `style.cssText`; going from a string to a map clears `cssText` first. A map key containing an upper-case letter warns `hammer: :style keys are CSS names, got :backgroundColor` and is still passed to `setProperty` (which ignores it). |
-| 7 | `<option>` value | On an `option` element `:value` is written as the `value` attribute (compared with `getAttribute`), so the markup always has it. Other elements keep the property. |
+| 7 | `<option>` value | On an `option` element `:value` is written as the `value` attribute (compared with `getAttribute`; `nil` removes it), so the markup always has it. Other elements keep the property. |
 
 Out of scope: passing the element to `:on-*` fns (`currentTarget` is read-only).
 

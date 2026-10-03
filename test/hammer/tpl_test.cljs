@@ -469,3 +469,19 @@
   (let [warns (t/expect-errors #(dom/mount! [camel-style] (container)))]
     (is (= [{:level :warn :message "hammer: :style keys are CSS names, got :backgroundColor" :error nil}] warns)
         "custom properties (--x) keep their case")))
+
+;; ---- <option> :value is always in the markup
+
+(defboth options [c v] [:select {:value c} (for [o ["a" "b"]] ^{:key o} [:option {:value (if (= o "b") v o)} o])])
+
+(deftest option-value-is-an-attribute
+  (let [el (check! options options-plain [:c :v]
+                   [{:c "a" :v "b"} {:c "b" :v "b"} {:c "b" :v "z"} {:c "a" :v nil}])]
+    (is (= ["a" nil] (mapv #(.getAttribute % "value") (.querySelectorAll el "option")))
+        "nil removes the attribute; the option's value is its text again"))
+  (reset! state/app-db {:c "b" :v "b"})
+  (let [el (container)]
+    (dom/mount! [options] el)
+    (is (= "<select><option value=\"a\">a</option><option value=\"b\">b</option></select>" (.-innerHTML el))
+        "written even when the value equals the text")
+    (is (= "b" (.. el -firstChild -value)) "the select still picks it")))
