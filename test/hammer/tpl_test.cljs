@@ -401,3 +401,43 @@
       (events/dispatch-sync [:set :ks ["c" "a" "b"]])
       (is (= [c a b] (vec (.. el -firstChild -children))))
       (is (= "<ul><b>c</b><b>a</b><b>b</b></ul>" (.-innerHTML el))))))
+
+;; ---- :key in the attrs map is the element's key, not an attribute
+
+(defn- attr-keyed-hiccup [ks] [:ul (for [k ks] [:li {:key k :class "row"} k])])
+(defc attr-keyed [] [ks [:ks]] [:ul (for [k ks] [:li {:key k :class "row"} k])])
+;; a call in body position is not compiled: plain hiccup through normalize
+(defc attr-keyed-runtime [] [ks [:ks]] (attr-keyed-hiccup ks))
+(defc both-keys [] [ks [:ks]] [:ul (for [k ks] ^{:key (- k)} [:li {:key 0} k])])
+
+(deftest attrs-key-moves-nodes-compiled-and-plain
+  (doseq [[label view] [["compiled" attr-keyed] ["plain" attr-keyed-runtime]]]
+    (reset! state/app-db {:ks [1 2 3]})
+    (let [el (container)]
+      (dom/mount! [view] el)
+      (let [[a b c] (vec (.querySelectorAll el "li"))
+            warns (t/expect-errors #(events/dispatch-sync [:set :ks [3 1 2]]))]
+        (is (= [c a b] (vec (.querySelectorAll el "li"))) (str label ": moved, not re-rendered in place"))
+        (is (= [] warns) (str label ": no duplicate/partial key warning"))
+        (is (= "<ul><li class=\"row\">3</li><li class=\"row\">1</li><li class=\"row\">2</li></ul>"
+               (.-innerHTML el))
+            (str label ": no key attribute"))))))
+
+(deftest metadata-key-wins-over-attrs-key
+  (reset! state/app-db {:ks [1 2]})
+  (let [el (container)]
+    (dom/mount! [both-keys] el)
+    (let [warns (t/expect-errors #(events/dispatch-sync [:set :ks [2 1]]))]
+      (is (= [] warns) "every attrs :key is 0, so using it would warn about duplicates"))
+    (is (= "<ul><li>2</li><li>1</li></ul>" (.-innerHTML el)))))
+
+(defc string-attr-keyed [] [ks [:ks]] [:ul (for [k ks] [:li {:key k "data-x" "1"} k])])
+
+(deftest attrs-key-in-a-map-with-string-keys
+  (reset! state/app-db {:ks [1 2]})
+  (let [el (container)]
+    (dom/mount! [string-attr-keyed] el)
+    (let [[a b] (vec (.querySelectorAll el "li"))]
+      (is (= [] (t/expect-errors #(events/dispatch-sync [:set :ks [2 1]]))))
+      (is (= [b a] (vec (.querySelectorAll el "li"))))
+      (is (= "<ul><li data-x=\"1\">2</li><li data-x=\"1\">1</li></ul>" (.-innerHTML el))))))

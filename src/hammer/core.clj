@@ -178,11 +178,16 @@
   in (:defs ctx); plain hiccup (children still compiled) if v's attrs are not
   literal."
   [ctx v]
-  (let [ctx (assoc ctx :binds (volatile! []) :checks (volatile! []))]
+  (let [ctx (assoc ctx :binds (volatile! []) :checks (volatile! []))
+        a (nth v 1 nil)
+        ;; :key in a literal attrs map is the element's key (metadata wins), never
+        ;; an attribute; other maps fall back to plain hiccup, where normalize does it
+        akey? (and (map? a) (every? keyword? (keys a)) (contains? a :key))
+        k (if (contains? (meta v) :key) (:key (meta v)) (when akey? (:key a)))
+        v (if akey? (with-meta (assoc v 1 (dissoc a :key)) (meta v)) v)]
     (if-let [{:keys [skel plain holes]} (analyze ctx v [])]
       (let [defs (:defs ctx)
             d (symbol (str (:cname ctx) "__tpl" (count @defs)))
-            k (:key (meta v))
             tpl `(new hammer.dom/VNode :tpl ~d nil (cljs.core/array ~@(map :sym holes))
                       nil ~k nil nil nil nil)]
         (swap! defs conj {:sym d

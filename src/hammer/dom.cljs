@@ -66,6 +66,9 @@
         (let [[tag id cls] (parse-tag h)
               a? (map? (nth x 1 nil))
               attrs (if a? (nth x 1) {})
+              ;; :key in attrs is the element's key (metadata wins), never an attribute
+              k (if (and (nil? k) a?) (:key attrs) k)
+              attrs (if (and a? (contains? attrs :key)) (dissoc attrs :key) attrs)
               c (class-str (:class attrs))
               c (if cls (if c (str cls " " c) cls) c)
               attrs (cond-> attrs id (assoc :id id) c (assoc :class c))]
