@@ -122,12 +122,22 @@
     (when reg? (.add new-types t))
     (gobj/set hs t v)))
 
-(defn- set-style! [^js el old v]
+(defn- set-style!
+  "A map of CSS property names is diffed against old; a string replaces
+  cssText."
+  [^js el old v]
   (let [s (.-style el)]
-    (doseq [[sk sv] v]
-      (when (not= sv (get old sk)) (.setProperty s (name sk) (str sv))))
-    (doseq [[sk _] old]
-      (when-not (contains? v sk) (.removeProperty s (name sk))))))
+    (if (string? v)
+      (set! (.-cssText s) v)
+      (let [old (if (string? old) (do (set! (.-cssText s) "") nil) old)]
+        (doseq [[sk sv] v]
+          (when (not= sv (get old sk))
+            (let [n (name sk)]
+              (when (and (re-find #"[A-Z]" n) (not (str/starts-with? n "--")))
+                (log/report! :warn (str "hammer: :style keys are CSS names, got " (pr-str sk)) nil))
+              (.setProperty s n (str sv)))))
+        (doseq [[sk _] old]
+          (when-not (contains? v sk) (.removeProperty s (name sk))))))))
 
 (defn- set-prop!
   "Writes :value/:checked/:selected (n is its name) only if the live element differs."

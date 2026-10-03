@@ -441,3 +441,31 @@
       (is (= [] (t/expect-errors #(events/dispatch-sync [:set :ks [2 1]]))))
       (is (= [b a] (vec (.querySelectorAll el "li"))))
       (is (= "<ul><li data-x=\"1\">2</li><li data-x=\"1\">1</li></ul>" (.-innerHTML el))))))
+
+;; ---- :style as a string; camelCase keys warn
+
+(defboth string-style [s] [:p {:style s} "x"])
+
+(deftest string-style-and-switching-to-a-map
+  (let [el (check! string-style string-style-plain [:s]
+                   [{:s "color: red"} {:s {:color "blue"}} {:s "margin: 1px"}
+                    {:s nil} {:s "color: red"} {:s {:margin "2px"}}])]
+    (is (= "<p style=\"margin: 2px;\">x</p>" (.-innerHTML el)) "the string's color is gone after the map")))
+
+(deftest string-style-is-applied
+  (reset! state/app-db {:s "color: red"})
+  (let [el (container)]
+    (dom/mount! [string-style] el)
+    (is (= "red" (.. el -firstChild -style -color)))
+    (events/dispatch-sync [:set :s {:margin "1px"}])
+    (is (= ["" "1px"] [(.. el -firstChild -style -color) (.. el -firstChild -style -margin)]))
+    (events/dispatch-sync [:set :s "padding: 3px"])
+    (is (= ["" "3px"] [(.. el -firstChild -style -margin) (.. el -firstChild -style -padding)]))))
+
+(defc camel-style [] [c [:c]] [:p {:style {:backgroundColor c :--myVar "1"}} "x"])
+
+(deftest camel-case-style-keys-warn
+  (reset! state/app-db {:c "red"})
+  (let [warns (t/expect-errors #(dom/mount! [camel-style] (container)))]
+    (is (= [{:level :warn :message "hammer: :style keys are CSS names, got :backgroundColor" :error nil}] warns)
+        "custom properties (--x) keep their case")))
