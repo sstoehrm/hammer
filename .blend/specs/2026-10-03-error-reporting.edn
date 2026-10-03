@@ -1,0 +1,41 @@
+;; hammer error reporting: every hammer: message goes through hammer.log/report!
+{:nodes {:log {:name "hammer.log/report!"
+               :type "new"
+               :note "builds {:level :message :error}; pushes to the test collector when active, then calls the reporter"}
+         :reporter {:name "reporter (default: console)"
+                    :type "new"
+                    :note "console.error / console.warn with message + error, same output as today"}
+         :on-error {:name "on-error!"
+                    :type "public api"
+                    :note "(on-error! f) replaces the reporter; (on-error! nil) restores console. Re-exported by hammer.core, hammer.canvas, hammer.gl via hammer.app"}
+         :collector {:name "test collector"
+                     :type "new"
+                     :note "only active once hammer.testing is loaded; holds reported entries until flush! or expect-errors takes them"}
+         :flush {:name "testing/flush!"
+                 :type "changed"
+                 :note "after settling, throws ex-info listing collected :error entries"}
+         :expect {:name "testing/expect-errors"
+                  :type "new"
+                  :note "(expect-errors f) runs f, returns collected entries, never throws on them"}
+         :util {:name "test-util capture-*"
+                :type "changed"
+                :note "capture-errors/capture-warnings wrap expect-errors so deliberate errors don't leak into a later flush!"}
+         :reset {:name "testing/reset-app!"
+                 :type "changed"
+                 :note "also clears the collector"}
+         :events {:name "events.cljs" :type "call site" :note "no handler/fx, handler/fx failed, not a vector, not an effect map, returned db"}
+         :render {:name "cells / dom / scheduler" :type "call site" :note "render/update/destroy/unmount/:ref failed, duplicate or missing keys, :key/:style misuse"}
+         :draw {:name "draw / canvas / gl" :type "call site" :note "init/draw/dispose/teardown failed, WebGL2 unavailable, context lost"}}
+ :edges {[:events :log] {:direction :->}
+         [:render :log] {:direction :->}
+         [:draw :log] {:direction :->}
+         [:log :collector] {:direction :-> :name "when active"}
+         [:log :reporter] {:direction :->}
+         [:on-error :reporter] {:direction :-> :name "replaces"}
+         [:flush :collector] {:direction :-> :name "drains, throws on :error"}
+         [:expect :collector] {:direction :-> :name "drains"}
+         [:reset :collector] {:direction :-> :name "clears"}
+         [:util :expect] {:direction :->}}
+ :boxes {:sites {:name "hammer: call sites (~30)" :type "zone" :components #{:events :render :draw}}
+         :core {:name "hammer.log" :type "zone" :components #{:log :reporter :collector}}
+         :testing {:name "hammer.testing" :type "zone" :components #{:flush :expect :reset}}}}
