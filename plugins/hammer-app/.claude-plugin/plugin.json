@@ -1,6 +1,6 @@
 {
   "name": "hammer-app",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Teaches Claude hammer's public API and DOM behaviour for writing app UIs: components, db paths, events, effects, forms, lists, errors and testing",
   "author": {
     "name": "Sören Stöhrmann",
