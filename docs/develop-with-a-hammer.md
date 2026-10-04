@@ -434,5 +434,11 @@ there only when the repository secrets `CLOJARS_USERNAME` and
 source included.
 Locally: `bb jar 0.1.0`, or `clojure -T:build deploy :version '"0.1.0"'`.
 
+Every dependency is pinned to an exact version: npm (`.npmrc` has
+`save-exact=true`), `deps.edn`, the GitHub Actions (by commit SHA), the runner
+and the CI toolchain (Java, Node, Clojure CLI, babashka, in the workflows'
+`env`). [Renovate](https://docs.renovatebot.com/) (`renovate.json`) opens
+grouped update PRs weekly and keeps the pins exact.
+
 The repository-local `hammer-internals` skill (`.claude/skills/`) explains the
 internals to an agent working on hammer itself.
