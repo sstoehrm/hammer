@@ -8,7 +8,7 @@
             [hammer.cells :as cells]
             [hammer.events :as events]
             [hammer.log :as log]
-            [hammer.attrs :as attrs]))
+            [hammer.attrs :refer [set-plain!]]))
 
 ;; t :text/:el/:comp, or :tpl (from defc): tag = Tpl, attrs = hole values,
 ;; args (:comp) = the whole hiccup vector, props from index 1;
@@ -153,7 +153,6 @@
     (let [v (if (= n "value") (str (or v "")) (boolean v))]
       (when (not= v (gobj/get el n)) (gobj/set el n v)))))
 
-(def ^:private set-plain! attrs/set-plain!)
 
 (defn- set-attr! [^js el k old v]
   (let [n (name k)]
