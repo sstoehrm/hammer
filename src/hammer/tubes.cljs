@@ -14,7 +14,8 @@
   backoff whose maximum grows linearly to 30 s; destroy closes it for good,
   without :on-disconnect. :id (default :default) names a tube; creating an id
   again replaces it."
-  (:require [cljs.reader :as reader]
+  (:require [cljs.tools.reader.edn :as edn]
+            [cljs.tools.reader.reader-types :as rt]
             [clojure.string :as str]
             [hammer.events :as events]
             [hammer.log :as log]))
@@ -40,31 +41,69 @@
   [n]
   (js/Math.floor (* (js/Math.random) (min 30000 (* 1000 (inc n))))))
 
-(defn- with-params [url params]
+(defn- param-str
+  "A param key or value as text; keywords keep their namespace (:user/id → user/id)."
+  [x]
+  (if (keyword? x) (subs (str x) 1) (str x)))
+
+(defn- with-params
+  "url with params as a query string, before any #fragment."
+  [url params]
   (let [sp (js/URLSearchParams.)]
     (doseq [[k v] params :when (some? v)]
-      (.append sp (if (keyword? k) (name k) (str k)) (if (keyword? v) (name v) (str v))))
+      (.append sp (param-str k) (param-str v)))
     (let [q (.toString sp)]
-      (if (str/blank? q) url (str url (if (str/includes? url "?") "&" "?") q)))))
+      (if (str/blank? q)
+        url
+        (let [h (.indexOf url "#")
+              [base frag] (if (neg? h) [url ""] [(subs url 0 h) (subs url h)])]
+          (str base (if (str/includes? base "?") "&" "?") q frag))))))
+
+(defn- hook? [h] (or (nil? h) (vector? h) (fn? h)))
+
+(defn- clip
+  "s cut to 200 characters for a message."
+  [s]
+  (let [s (str s)] (if (> (count s) 200) (str (subs s 0 200) "…") s)))
 
 (defn- notify!
-  "Runs an :on-connect/:on-disconnect hook: an event vector is dispatched, a
-  fn is called."
-  [h]
-  (cond
-    (vector? h) (events/dispatch h)
-    (fn? h) (h)))
+  "Runs :on-connect/:on-disconnect hook k of tube t: an event vector is
+  dispatched, a fn is called (a throw is reported)."
+  [^js t k]
+  (let [h (get (.-opts t) k)]
+    (cond
+      (vector? h) (events/dispatch h)
+      (fn? h) (try (h)
+                   (catch :default e
+                     (log/report! :error (str "hammer: tube " (pr-str (.-id t)) " " k " failed") e))))))
+
+(defn- read-frame
+  "The one EDN form in frame data, or ::bad after reporting why."
+  [id data]
+  (let [bad (fn [why] (log/report! :error (str "hammer: tube " id " received " why ": " (clip data)) nil) ::bad)]
+    (if-not (string? data)
+      (bad "a non-text frame")
+      (try
+        (let [r (rt/string-push-back-reader data)
+              ev (edn/read {:eof ::eof} r)
+              more (edn/read {:eof ::eof} r)]
+          (cond
+            (= ev ::eof) (bad "an empty frame")
+            (not= more ::eof) (bad "more than one form in a frame")
+            :else ev))
+        (catch :default _ (bad "an unreadable frame"))))))
 
 (defn- receive! [^js t data]
   (let [id (pr-str (.-id t))
-        ev (try (reader/read-string data)
-                (catch :default _
-                  (log/report! :error (str "hammer: tube " id " received an unreadable frame: " data) nil)
-                  ::unreadable))]
+        ev (read-frame id data)]
     (cond
-      (= ev ::unreadable) nil
-      (vector? ev) (if-let [f (:on-receive (.-opts t))] (f ev) (events/dispatch ev))
-      :else (log/report! :error (str "hammer: tube " id " received a non-event: " data) nil))))
+      (= ev ::bad) nil
+      (not (vector? ev)) (log/report! :error (str "hammer: tube " id " received a non-event: " (clip data)) nil)
+      :else (if-let [f (:on-receive (.-opts t))]
+              (try (f ev)
+                   (catch :default e
+                     (log/report! :error (str "hammer: tube " id " :on-receive failed") e)))
+              (events/dispatch ev)))))
 
 (defn- flush-queue! [^js t]
   (let [q (.-queue t)]
@@ -79,31 +118,46 @@
     (set! (.-attempt t) (inc n))
     (set! (.-timer t) (js/setTimeout #(connect! t) (backoff n)))))
 
-(defn- connect! [^js t]
+(declare destroy!)
+
+(defn- connect!
+  "Opens t's socket. Returns false (after reporting and removing the tube)
+  when the socket can't even be constructed, e.g. a malformed url."
+  [^js t]
   (set! (.-timer t) nil)
-  (when-not (.-closed t)
-    (let [^js ws (open-socket (.-url t))
-          opts (.-opts t)]
-      (set! (.-ws t) ws)
-      (set! (.-onopen ws) (fn [_]
-                            (set! (.-connected t) true)
-                            (set! (.-attempt t) 0)
-                            (flush-queue! t)
-                            (notify! (:on-connect opts))))
-      (set! (.-onmessage ws) (fn [^js e] (receive! t (.-data e))))
-      (set! (.-onerror ws) (fn [_] nil)) ; a close follows
-      (set! (.-onclose ws) (fn [_]
-                             (let [was (.-connected t)]
-                               (set! (.-connected t) false)
-                               (set! (.-ws t) nil)
-                               (when-not (.-closed t)
-                                 (when was (notify! (:on-disconnect opts)))
-                                 (reconnect-later! t))))))))
+  (if (.-closed t)
+    true
+    (if-let [^js ws (try (open-socket (.-url t))
+                         (catch :default e
+                           (log/report! :error (str "hammer: tube " (pr-str (.-id t)) " could not open "
+                                                    (.-url t))
+                                        e)
+                           nil))]
+      (do (set! (.-ws t) ws)
+          (set! (.-onopen ws) (fn [_]
+                                (set! (.-connected t) true)
+                                (set! (.-attempt t) 0)
+                                (flush-queue! t)
+                                (notify! t :on-connect)))
+          (set! (.-onmessage ws) (fn [^js e] (receive! t (.-data e))))
+          (set! (.-onerror ws) (fn [_] nil)) ; a close follows
+          (set! (.-onclose ws) (fn [_]
+                                 (let [was (.-connected t)]
+                                   (set! (.-connected t) false)
+                                   (set! (.-ws t) nil)
+                                   (when-not (.-closed t)
+                                     ;; schedule first: a throwing hook must not stop reconnecting
+                                     (reconnect-later! t)
+                                     (when was (notify! t :on-disconnect))))))
+          true)
+      (do (destroy! {:id (.-id t)}) false))))
 
 (defn- close! [^js t]
   (set! (.-closed t) true)
   (when-let [tm (.-timer t)] (js/clearTimeout tm))
   (when-let [^js ws (.-ws t)]
+    (set! (.-onopen ws) nil)
+    (set! (.-onmessage ws) nil)
     (set! (.-onclose ws) nil)
     (.close ws)))
 
@@ -120,8 +174,22 @@
   "Opens a tube: {:id :url :params :on-connect :on-disconnect :on-receive
   :backoff}. An id already open is replaced."
   [{:keys [id url params] :or {id :default} :as opts}]
-  (if-not (string? url)
+  (cond
+    (not (string? url))
     (log/report! :error (str "hammer: tube " (pr-str id) " needs a :url string, got " (pr-str url)) nil)
+
+    (some #(not (hook? (get opts %))) [:on-connect :on-disconnect])
+    (let [k (first (filter #(not (hook? (get opts %))) [:on-connect :on-disconnect]))]
+      (log/report! :error (str "hammer: tube " (pr-str id) " " k " must be an event vector or a fn, got "
+                               (pr-str (get opts k)))
+                   nil))
+
+    (not (or (nil? (:on-receive opts)) (fn? (:on-receive opts))))
+    (log/report! :error (str "hammer: tube " (pr-str id) " :on-receive must be a fn, got "
+                             (pr-str (:on-receive opts)))
+                 nil)
+
+    :else
     (do (destroy! {:id id})
         (let [t #js {:id id :opts opts :url (with-params url params) :ws nil :queue #js []
                      :attempt 0 :timer nil :connected false :closed false}]
@@ -142,8 +210,12 @@
 
       :else
       (if-let [^js t (get @tubes id)]
-        (let [s (pr-str ev)]
-          (if (.-connected t) (.send (.-ws t) s) (.push (.-queue t) s)))
+        (let [s (binding [*print-length* nil *print-level* nil] (pr-str ev))
+              ^js ws (.-ws t)]
+          ;; only an OPEN socket sends; while CLOSING, .send would drop it silently
+          (if (and (.-connected t) ws (= 1 (.-readyState ws)))
+            (.send ws s)
+            (.push (.-queue t) s)))
         (log/report! :error (str "hammer: no tube " (pr-str id) " to send to") nil))))
   nil)
 

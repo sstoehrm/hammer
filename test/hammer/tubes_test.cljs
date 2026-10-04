@@ -13,16 +13,17 @@
   "A WebSocket stand-in: records url and sent frames; the test opens it,
   pushes messages and drops it. close() fires onclose asynchronously."
   [url]
-  (let [ws #js {:url url :sent #js [] :closed false}]
-    (set! (.-send ws) (fn [s] (.push (.-sent ws) s)))
-    (set! (.-close ws) (fn [] (set! (.-closed ws) true)
-                         (js/queueMicrotask #(when-let [f (.-onclose ws)] (f #js {})))))
+  (let [ws #js {:url url :sent #js [] :closed false :readyState 0}]
+    (set! (.-send ws) (fn [s] (when (= 1 (.-readyState ws)) (.push (.-sent ws) s))))
+    (set! (.-close ws) (fn [] (set! (.-closed ws) true) (set! (.-readyState ws) 2)
+                         (js/queueMicrotask #(do (set! (.-readyState ws) 3)
+                                                 (when-let [f (.-onclose ws)] (f #js {}))))))
     (swap! sockets conj ws)
     ws))
 
-(defn- open! [^js ws] ((.-onopen ws) #js {}))
+(defn- open! [^js ws] (set! (.-readyState ws) 1) ((.-onopen ws) #js {}))
 (defn- push! [^js ws s] ((.-onmessage ws) #js {:data s}))
-(defn- drop! [^js ws] ((.-onclose ws) #js {}))
+(defn- drop! [^js ws] (set! (.-readyState ws) 3) ((.-onclose ws) #js {}))
 (defn- sent [^js ws] (vec (.-sent ws)))
 
 (use-fixtures :each {:before #(do (t/reset-app!) (reset! sockets []) (tubes/set-websocket! fake-ws))
@@ -131,3 +132,69 @@
     (is (.-closed ws))
     (is (= ["hammer: no tube :default to send to"]
            (mapv :message (t/expect-errors #(tubes/send! [:x])))))))
+
+;; ---- review: hooks that throw, closing sockets, bad urls, framing
+
+(deftest a-throwing-on-disconnect-still-reconnects-and-is-reported
+  (async done
+    (tubes/create! {:url "ws://h" :on-disconnect (fn [] (throw (js/Error. "hook"))) :backoff no-wait})
+    (let [ws1 (first @sockets)]
+      (open! ws1)
+      (let [r (t/expect-errors #(drop! ws1))]
+        (is (= ["hammer: tube :default :on-disconnect failed"] (mapv :message r))))
+      (js/setTimeout (fn [] (is (= 2 (count @sockets)) "reconnected anyway") (done)) 10))))
+
+(deftest a-throwing-on-receive-is-reported
+  (tubes/create! {:url "ws://h" :on-receive (fn [_] (throw (js/Error. "recv"))) :backoff no-wait})
+  (let [ws (first @sockets)]
+    (open! ws)
+    (is (= ["hammer: tube :default :on-receive failed"]
+           (mapv :message (t/expect-errors #(push! ws "[:x]")))))))
+
+(deftest sends-while-closing-are-queued
+  (tubes/create! {:url "ws://h" :backoff no-wait})
+  (let [ws (first @sockets)]
+    (open! ws)
+    (set! (.-readyState ws) 2) ; the server started closing; onclose not yet fired
+    (tubes/send! [:late 1])
+    (is (= [] (sent ws)))
+    (drop! ws)))
+
+(deftest a-socket-that-cannot-open-is-reported-and-removed
+  (tubes/set-websocket! (fn [_] (throw (js/Error. "SyntaxError"))))
+  (let [r (t/expect-errors #(do (tubes/create! {:url "ws://bad" :backoff no-wait})
+                                (tubes/send! [:x])))]
+    (is (= ["hammer: tube :default could not open ws://bad"
+            "hammer: no tube :default to send to"]
+           (mapv :message r)))))
+
+(deftest params-go-before-a-fragment-and-keep-namespaces
+  (tubes/create! {:url "ws://h/ws#frag" :params {:user/id 1 :q "a"} :backoff no-wait})
+  (is (= "ws://h/ws?user%2Fid=1&q=a#frag" (.-url (first @sockets)))))
+
+(deftest print-length-does-not-truncate-sent-events
+  (tubes/create! {:url "ws://h" :backoff no-wait})
+  (let [ws (first @sockets)]
+    (open! ws)
+    (binding [*print-length* 2] (tubes/send! [:big [1 2 3 4]]))
+    (is (= "[:big [1 2 3 4]]" (last (sent ws))))))
+
+(deftest extra-forms-in-a-frame-are-reported-and-frames-truncated
+  (tubes/create! {:url "ws://h" :backoff no-wait})
+  (let [ws (first @sockets)
+        long-bad (apply str "[" (repeat 500 "x "))]
+    (open! ws)
+    (let [r (t/expect-errors #(do (push! ws "[:a] [:b]") (push! ws long-bad)))]
+      (is (= "hammer: tube :default received more than one form in a frame: [:a] [:b]" (:message (first r))))
+      (is (< (count (:message (second r))) 300) "a long frame is truncated in the message"))))
+
+(deftest handlers-are-detached-on-destroy
+  (tubes/create! {:url "ws://h" :on-connect [::got :up] :backoff no-wait})
+  (let [ws (first @sockets)]
+    (tubes/destroy! {})
+    (is (nil? (.-onopen ws)))
+    (is (nil? (.-onmessage ws)))))
+
+(deftest malformed-hooks-are-reported
+  (is (= ["hammer: tube :default :on-connect must be an event vector or a fn, got :up"]
+         (mapv :message (t/expect-errors #(tubes/create! {:url "ws://h" :on-connect :up}))))))

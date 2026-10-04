@@ -230,15 +230,22 @@ speaks it works. `(:require [hammer.tubes])` registers three effects:
 - **Incoming:** every event from the server is dispatched; `:on-receive (fn
   [event])` replaces that, e.g. to accept only some events.
 - **Outgoing:** `:hammer.tubes/send` takes an event vector, or `{:id :event}`.
-  While disconnected, events are queued and go out in order on the next connect.
+  While disconnected (or while the socket is closing), events are queued and go
+  out in order on the next connect, before `:on-connect` is dispatched. The
+  queue has no size limit. An event in flight when a connection silently dies
+  can still be lost; that is inherent to WebSockets.
 - **Reconnect:** a dropped connection reconnects after a random backoff whose
   maximum grows by 1 s per attempt up to 30 s (`:backoff (fn [attempt] ms)`
   replaces it), reset after a successful connect. `:hammer.tubes/destroy` closes
-  for good, without `:on-disconnect`.
+  for good, without `:on-disconnect`. A server that accepts and then closes
+  (e.g. rejecting a token) is retried quickly forever: destroy the tube from
+  `:on-disconnect` when that happens.
 - **Several tubes:** `:id` on each effect (default `:default`); creating an id
   again replaces that tube.
-- **Errors:** unreadable or non-event frames, a send to no tube and a missing
-  `:url` are reported through `on-error!`.
+- **Errors:** unreadable, empty, non-text or multi-form frames, non-event
+  frames, a hook or `:on-receive` that throws, a url the WebSocket can't open
+  (the tube is removed), a send to no tube and malformed options are reported
+  through `on-error!`.
 - **Testing:** `(hammer.tubes/set-websocket! (fn [url] fake-socket))` swaps in a
   fake WebSocket; `reset-app!` destroys every tube.
 - **Size:** about 14 KB gzip in apps that require it, nearly all of it the EDN
