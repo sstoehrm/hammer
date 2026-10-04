@@ -58,7 +58,6 @@ No clue. Use with caution.
 - [ ] First release: tag `v0.1.0` (GitHub release with the jar; use it via the
   git tag).
 - [ ] Publish on Clojars once the git releases are verified.
-- [ ] Track global atoms deref'd in helper functions, not only in the component.
 - [ ] 3D on top of `hammer.gl`: meshes, cameras, materials, a scene graph.
 
 ## Special thanks
