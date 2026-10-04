@@ -71,13 +71,19 @@
     (throw (ex-info (str macro " " cname ": missing bindings vector, write ("
                          macro " " cname " " (pr-str props) " [] body)")
                     {:name cname})))
-  (let [slots (into (vec props) (map first (partition 2 bindings)))]
+  ;; each message names the component and the offending form, so it can be
+  ;; fixed from a build log alone
+  (let [slots (into (vec props) (map first (partition 2 bindings)))
+        where (str macro " " cname ": ")]
     (when (odd? (count bindings))
-      (throw (ex-info (str macro ": bindings need an even number of forms") {:name cname})))
-    (when-not (every? simple-symbol? slots)
-      (throw (ex-info (str macro ": props and binding names must be plain symbols") {:name cname})))
-    (when-not (= (count slots) (count (set slots)))
-      (throw (ex-info (str macro ": duplicate prop or binding name") {:name cname :slots slots})))))
+      (throw (ex-info (str where "bindings need an even number of forms, got " (pr-str bindings))
+                      {:name cname})))
+    (when-let [bad (first (remove simple-symbol? slots))]
+      (throw (ex-info (str where "props and binding names must be plain symbols, got " (pr-str bad)
+                           "; bind the value to a symbol and derive the parts: [m] [x (:x m)]")
+                      {:name cname})))
+    (when-let [dup (some (fn [[s n]] (when (> n 1) s)) (frequencies slots))]
+      (throw (ex-info (str where "duplicate prop or binding name " dup) {:name cname :slots slots})))))
 
 ;; ---- auto-bound derefs
 ;;
