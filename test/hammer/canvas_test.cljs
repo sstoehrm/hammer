@@ -530,4 +530,5 @@
 
 (deftest canvas-non-fn-non-vector-handlers-warn
   (let [warns (t/expect-errors #(do (cv/mount! [keyword-click] (div)) (t/frame! 0)))]
-    (is (= ["hammer: :on-click must be an event vector or a fn, got :pick"] (mapv :message warns)))))
+    (is (= ["hammer: :on-click must be an event vector or a fn, got :pick (wrap a multimethod or other callable in #(...))"]
+           (mapv :message warns)))))

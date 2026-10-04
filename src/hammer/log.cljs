@@ -35,11 +35,14 @@
     nil))
 
 (defn check-handler!
-  "Dev builds: warns when :on-* value v is neither nil, an event vector nor a
-  fn (it would be ignored). k names the key, e.g. \":on-click\"."
+  "Dev builds: warns when :on-* value v is truthy but neither an event vector
+  nor a fn (it would be ignored; nil and false mean no handler). Multimethods
+  and other IFn objects are not fns either. k names the key, e.g. \":on-click\"."
   [k v]
-  (when (and ^boolean goog/DEBUG (some? v) (not (vector? v)) (not (fn? v)))
-    (report! :warn (str "hammer: " k " must be an event vector or a fn, got " (pr-str v)) nil)))
+  (when (and ^boolean goog/DEBUG v (not (vector? v)) (not (fn? v)))
+    (report! :warn (str "hammer: " k " must be an event vector or a fn, got " (pr-str v)
+                        " (wrap a multimethod or other callable in #(...))")
+             nil)))
 
 (defn collect!
   "Turns on the test collector (hammer.testing does this when loaded)."

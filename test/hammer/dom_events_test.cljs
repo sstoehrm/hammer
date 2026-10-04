@@ -111,8 +111,10 @@
   (let [el (container)
         warns (hammer.testing/expect-errors
                #(dom/mount! [:div [:button {:on-click :save}] [:i {:on-input #{:x}}]
-                             [:b {:on-click [:ok]}] [:u {:on-click (fn [_])}] [:s {:on-click nil}]]
+                             [:b {:on-click [:ok]}] [:u {:on-click (fn [_])}] [:s {:on-click nil}]
+                             [:q {:on-click false}]]
                             el))]
-    (is (= [{:level :warn :message "hammer: :on-click must be an event vector or a fn, got :save" :error nil}
-            {:level :warn :message "hammer: :on-input must be an event vector or a fn, got #{:x}" :error nil}]
-           warns))))
+    (is (= ["hammer: :on-click must be an event vector or a fn, got :save (wrap a multimethod or other callable in #(...))"
+            "hammer: :on-input must be an event vector or a fn, got #{:x} (wrap a multimethod or other callable in #(...))"]
+           (mapv :message warns))
+        "nil and false mean no handler")))
