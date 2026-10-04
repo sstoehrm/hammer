@@ -7,7 +7,8 @@
             [goog.object :as gobj]
             [hammer.cells :as cells]
             [hammer.events :as events]
-            [hammer.log :as log]))
+            [hammer.log :as log]
+            [hammer.attrs :as attrs]))
 
 ;; t :text/:el/:comp, or :tpl (from defc): tag = Tpl, attrs = hole values,
 ;; args (:comp) = the whole hiccup vector, props from index 1;
@@ -152,19 +153,7 @@
     (let [v (if (= n "value") (str (or v "")) (boolean v))]
       (when (not= v (gobj/get el n)) (gobj/set el n v)))))
 
-(defn- enumerated?
-  "Attributes whose value is the string \"true\" or \"false\", not presence."
-  [n]
-  (or (= n "draggable") (= n "spellcheck") (= n "contenteditable") (= n "writingsuggestions")
-      (str/starts-with? n "aria-")))
-
-(defn- set-plain! [^js el n v]
-  (cond
-    (nil? v) (.removeAttribute el n)
-    (and (boolean? v) (enumerated? n)) (.setAttribute el n (if v "true" "false"))
-    (false? v) (.removeAttribute el n)
-    (true? v) (.setAttribute el n "")
-    :else (.setAttribute el n (str v))))
+(def ^:private set-plain! attrs/set-plain!)
 
 (defn- set-attr! [^js el k old v]
   (let [n (name k)]

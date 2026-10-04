@@ -6,7 +6,8 @@
   (:require [clojure.string :as str]
             [hammer.cells :as cells]
             [hammer.events :as events]
-            [hammer.log :as log]))
+            [hammer.log :as log]
+            [hammer.attrs :as attrs]))
 
 ;; setup!: (fn [st render] → node) once the canvas exists; draw-arg: (fn [st])
 ;; → first draw-fn arg, nil to skip this draw; resized!: (fn [st]) after the
@@ -122,7 +123,7 @@
           :style (do (doseq [[sk _] (:style old) :when (not (contains? v sk))]
                        (.removeProperty (.-style c) (name sk)))
                      (doseq [[sk sv] v] (set-css! c (name sk) (str sv))))
-          (if (nil? v) (.removeAttribute c (name k)) (.setAttribute c (name k) (str v)))))
+          (attrs/set-plain! c (name k) v)))
       (doseq [[k v] old :when (not (contains? nu k))]
         (case k
           :class (set! (.-className c) "")

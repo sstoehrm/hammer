@@ -212,7 +212,7 @@ fn just mutates it directly, same as an atom would, without the watch.
 | `:on-*` | all | Canvas DOM events, e.g. `:on-click`, `:on-pointermove`. A fn gets `(e {:x :y})` in canvas-local CSS pixels; an event vector is dispatched with `x y` appended, e.g. `[:pick]` → `[:pick 120 48]`. |
 | `:fallback` | `hammer.gl` | Hiccup rendered instead of the canvas when WebGL2 is unavailable (DOM embedding only). **Static: plain hiccup only** — no components, no `:on-*` handlers, no `:ref`. It is rendered once through the DOM renderer's internal host-render and is never mounted or unmounted as a component tree, so nothing in it is reactive. |
 | `:on-unsupported` | `hammer.gl` | `(fn [reason])` called when WebGL2 is unavailable. |
-| `:attrs` | all | Extra attributes for the `<canvas>` element (`:class`, `:style`, `:aria-label`, …). |
+| `:attrs` | all | Extra attributes for the `<canvas>` element (`:class`, `:style`, `:aria-label`, …). Values follow the DOM attribute rules: `nil`/`false` remove, `true` writes an empty attribute, `aria-*` and `draggable` take `"true"`/`"false"`. |
 
 The draw fn's arguments:
 
