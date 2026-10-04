@@ -1,10 +1,61 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <title>hammer</title>
-  <g transform="rotate(-40 32 32) translate(0 1)">
-    <rect x="28.5" y="17" width="7" height="42" rx="3.5" fill="#63b132"/>
-    <rect x="28.5" y="44" width="7" height="15" rx="3.5" fill="#4a8a22"/>
-    <path d="M15 5 h26 l10 4 v9 l-10 4 h-26 a3 3 0 0 1 -3 -3 v-11 a3 3 0 0 1 3 -3z" fill="#3f63b5"/>
-    <path d="M15 5 h26 l10 4 v3.5 h-39 v-4.5 a3 3 0 0 1 3 -3z" fill="#5881d8"/>
-    <rect x="41" y="7" width="2.2" height="13" fill="#2d4a8f"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#14283A"/>
+      <stop offset="100%" stop-color="#07131F"/>
+    </linearGradient>
+    <linearGradient id="hammer" x1="0.3" y1="0" x2="0.55" y2="1">
+      <stop offset="0%" stop-color="#2EA8FF"/>
+      <stop offset="52%" stop-color="#21D1D7"/>
+      <stop offset="100%" stop-color="#66F07E"/>
+    </linearGradient>
+    <filter id="soft" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#000000" flood-opacity="0.25"/>
+    </filter>
+  </defs>
+
+  <!-- app tile -->
+  <rect x="12" y="12" width="488" height="488" rx="112" fill="url(#bg)"/>
+
+  <!-- code brackets -->
+  <g fill="none" stroke="#F7F9FC" stroke-width="34" stroke-linecap="round" stroke-linejoin="round" filter="url(#soft)">
+    <path d="M170 166 L96 256 L170 346"/>
+    <path d="M342 166 L416 256 L342 346"/>
+  </g>
+
+  <!-- hammer -->
+  <g filter="url(#soft)">
+    <!-- handle -->
+    <path d="M245 218
+             C252 206 265 201 278 205
+             C292 210 298 224 293 238
+             L235 412
+             C230 428 213 436 198 430
+             L182 424
+             C166 418 158 401 165 385
+             L238 225
+             C240 222 242 220 245 218 Z"
+          fill="url(#hammer)"/>
+
+    <!-- head / claw silhouette -->
+    <path d="M182 154
+             C215 116 266 99 312 109
+             C350 117 378 139 392 169
+             C398 181 404 187 416 192
+             L437 201
+             C446 205 450 216 445 225
+             L413 279
+             C408 288 396 291 387 286
+             L355 268
+             C345 262 339 255 336 245
+             C333 234 325 229 315 231
+             C304 233 296 242 295 253
+             L291 281
+             L247 264
+             L264 205
+             C270 183 261 166 243 158
+             C225 150 205 152 182 167
+             C174 172 170 162 182 154 Z"
+          fill="url(#hammer)"/>
   </g>
 </svg>
