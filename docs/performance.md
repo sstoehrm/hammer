@@ -73,7 +73,30 @@ draws once. Per-frame state lives in a `volatile!`, which nothing watches.
 
 ## Numbers
 
-<!-- js-framework-benchmark table: filled in from the current run -->
+[js-framework-benchmark](https://github.com/krausest/js-framework-benchmark),
+keyed. Median total time in ms over 10 runs; lower is better. Last row: the
+geometric mean of each framework's time relative to vanillajs (hand-written DOM
+code, the floor).
+
+| benchmark | vanillajs | **hammer** | svelte 5.42 | react-hooks 19.2 | reagami 0.2 | reagent 0.10 | re-frame 1.4 |
+|---|---|---|---|---|---|---|---|
+| create 1,000 rows | 53.8 | **69.2** | 56.1 | 68.3 | 73.7 | 91.5 | 109.3 |
+| replace 1,000 rows | 65.8 | **65.8** | 65.8 | 76.1 | 74.5 | 85.5 | 116.6 |
+| update every 10th row (×16) | 30.9 | **42.1** | 37.2 | 44.7 | 88.8 | 64.5 | 72.8 |
+| select a row | 7.8 | **9.1** | 12.6 | 13.7 | 59.5 | 18.4 | 38.0 |
+| swap two rows | 41.0 | **52.3** | 43.8 | 226.8 | 95.7 | 245.8 | 256.1 |
+| remove one row | 36.7 | **43.0** | 39.0 | 40.9 | 68.2 | 54.7 | 68.0 |
+| create 10,000 rows | 566.5 | **615.9** | 618.2 | 795.4 | 713.8 | 846.5 | 890.1 |
+| append 1,000 to 1,000 (×2) | 55.3 | **64.8** | 59.4 | 67.8 | 77.9 | 87.2 | 105.9 |
+| clear 1,000 rows (×8) | 27.4 | **36.2** | 31.6 | 51.1 | 32.3 | 55.2 | 100.2 |
+| **× vanillajs (geometric mean)** | 1.00 | **1.20** | 1.13 | 1.61 | 1.89 | 1.98 | 2.59 |
+
+Measured 2026-10-03 with hammer `28a8c04`, headless Chromium 153, on an AMD
+Ryzen AI MAX+ 395 (32 threads), Linux, with the benchmark's default CPU
+throttling. All seven ran in one session, the order rotating per benchmark,
+each benchmark started only once the machine was idle. Expect ±5–10% between
+sessions. The benchmark app is the same for every hammer version and uses
+`is?` for the selected row.
 
 Other measurements:
 
@@ -84,7 +107,7 @@ Other measurements:
 - **Canvas:** [bench/canvas/RESULTS.md](../bench/canvas/RESULTS.md) compares
   hammer's `defdraw`/`defloop` with hand-written JS issuing the same draw
   calls.
-- **Tokens:** hammer's TodoMVC is 52.5% fewer tokens than re-frame's
-  (`bb tokens`). [stack-cap-bench](https://github.com/sstoehrm/stack-cap-bench)
+- **Tokens:** hammer's TodoMVC is 1,246 tokens against re-frame's 2,637, 52.7%
+  fewer (`bb tokens`). [stack-cap-bench](https://github.com/sstoehrm/stack-cap-bench)
   measures what a coding agent spends building the same projects in different
   stacks, hammer with its skill among them.
