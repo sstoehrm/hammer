@@ -56,7 +56,7 @@ No clue. Use with caution.
 - [ ] A built-in HTTP effect (`fetch`-based `:http`), so apps don't each write one.
 - [ ] SVG: elements are created with `createElement`, so `<svg>` content does not
   render yet.
-- [ ] Canvas components' `:attrs` follow the DOM attribute rules (booleans,
+- [x] Canvas components' `:attrs` follow the DOM attribute rules (booleans,
   `aria-*`).
 - [ ] Warn when an `:on-*` handler is a keyword, set or map (ignored today).
 - [ ] Track global atoms deref'd in helper functions, not only in the component.
