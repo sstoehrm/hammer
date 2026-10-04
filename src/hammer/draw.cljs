@@ -165,7 +165,7 @@
         ;; type -> opt key, nil when opts have no event keys
         ^js want (reduce-kv (fn [^js acc k v]
                               (if-let [t (event-type k)]
-                                (do (log/check-handler! (str k) v)
+                                (do (when ^boolean goog/DEBUG (log/check-handler! (str k) v))
                                     (doto (or acc (js/Map.)) (.set t k)))
                                 acc))
                             nil (.-opts st))]
