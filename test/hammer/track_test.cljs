@@ -62,13 +62,33 @@
   (events/dispatch-sync [::set :a 2])
   (t/flush!)
   (is (= [[:a1 1] [:a2 1] [:a2 2]] @seen))
-  (let [r (t/expect-errors #(do (track/register! {:id :a2 :path [:a] :event-fn identity})
-                                (track/dispose! {:id :nope})
-                                (track/register! {:id :bad :path :a :event-fn identity})))]
-    (is (= ["hammer: track :a2 is already registered"
-            "hammer: no track :nope to dispose"
-            "hammer: track :bad needs :path or :paths (db path vectors) and an :event-fn"]
+  (let [r (t/expect-errors #(do (track/dispose! {:id :nope})
+                                (track/register! {:id :bad :path :a :event-fn identity})
+                                (track/register! {:id :both :path [:a] :paths [[:b]] :event-fn identity})))]
+    (is (= ["hammer: no track :nope to dispose"
+            "hammer: track :bad needs :path or :paths (db path vectors) and an :event-fn"
+            "hammer: track :both takes :path or :paths, not both"]
            (mapv :message r)))))
+
+(deftest registering-an-id-again-replaces-it
+  (reset! state/app-db {:a 1})
+  (track/register! {:id :hot :path [:a] :event-fn (fn [a] [::saw :old a])})
+  (t/flush!)
+  (track/register! {:id :hot :path [:a] :event-fn (fn [a] [::saw :new a])}) ; e.g. hot reload
+  (t/flush!)
+  (events/dispatch-sync [::set :a 2])
+  (t/flush!)
+  (is (= [[:old 1] [:new 1] [:new 2]] @seen) "the new event-fn replaces the old one"))
+
+(def kept (atom nil))
+(events/reg-event ::keep (fn [_ vs] (reset! kept vs) nil))
+
+(deftest a-variadic-event-fn-keeps-its-values
+  (reset! state/app-db {:a 1 :b 2})
+  (track/register! {:id :var :paths [[:a] [:b]] :event-fn (fn [& vs] [::keep vs])})
+  (t/flush!)
+  (events/dispatch-sync [::set :a 99])
+  (is (= [1 2] (vec @kept)) "values handed to event-fn don't change afterwards"))
 
 (deftest only-affected-tracks-run
   (reset! state/app-db {:a 1 :b 1})

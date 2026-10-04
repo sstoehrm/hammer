@@ -118,7 +118,9 @@ db paths change, without a component (the re-frame "track" pattern):
 ```
 
 `:dispatch-first?` (default true) also fires for the current values. A change
-is "not `=`"; only tracks whose paths changed run. `reset-app!` disposes all.
+is "not `=`", batched per tick; only tracks whose paths changed run.
+Registering an id again replaces it. Don't let a track's event change its own
+path (it loops). `reset-app!` disposes all.
 
 ## Hiccup and DOM attributes
 

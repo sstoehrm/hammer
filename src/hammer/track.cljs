@@ -9,7 +9,8 @@
   :path, or :paths for several (event-fn then gets one value per path).
   event-fn returns an event vector to dispatch, or nil for none.
   :dispatch-first? (default true) also dispatches for the values at
-  registration. Both effects take a map or a vector of maps.
+  registration. Registering an id again replaces that track. Both effects take
+  a map or a vector of maps.
 
   A track is a component instance without a body or DOM: its paths subscribe
   in the path trie like any binding, so only tracks whose paths changed run,
@@ -27,7 +28,9 @@
   [^cells/Instance inst]
   (let [^js t (.-vnode inst)]
     (try
-      (when-some [ev (apply (.-f t) (array-seq (.-vals inst)))]
+      ;; .apply copies the values; (apply f (array-seq vals)) would hand a
+      ;; variadic event-fn a seq over the live array refresh! overwrites
+      (when-some [ev (.apply (.-f t) nil (.-vals inst))]
         (events/dispatch ev))
       (catch :default e
         (log/report! :error (str "hammer: track " (pr-str (.-id t)) " failed") e)))))
@@ -41,13 +44,17 @@
 
 (def ^:private host (cells/Host. step! nil nil))
 
+(declare dispose!)
+
 (defn register!
-  "Registers a track: {:id :path|:paths :event-fn :dispatch-first?}."
-  [{:keys [id path paths event-fn dispatch-first?] :or {dispatch-first? true}}]
+  "Registers a track: {:id :path|:paths :event-fn :dispatch-first?}. An id
+  that is already registered is replaced (so a hot reload that registers
+  again runs the new event-fn)."
+  [{:keys [id path paths event-fn dispatch-first?] :or {dispatch-first? true} :as opts}]
   (let [paths (or paths (when path [path]))]
     (cond
-      (contains? @tracks id)
-      (log/report! :warn (str "hammer: track " (pr-str id) " is already registered") nil)
+      (and path (:paths opts))
+      (log/report! :error (str "hammer: track " (pr-str id) " takes :path or :paths, not both") nil)
 
       (not (and (some? id) (seq paths) (every? vector? paths) (fn? event-fn)))
       (log/report! :error (str "hammer: track " (pr-str id) " needs :path or :paths (db path"
@@ -55,7 +62,8 @@
                    nil)
 
       :else
-      (let [n (count paths)
+      (let [_ (when (contains? @tracks id) (dispose! {:id id}))
+            n (count paths)
             c (cells/component (str "track " (pr-str id)) 0
                                (mapv (fn [p] {:kind :path :deps [] :f (constantly p)}) paths)
                                (vec (range n))

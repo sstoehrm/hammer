@@ -191,7 +191,13 @@ a draft. `(:require [hammer.track])` registers two effects:
 - `:path`, or `:paths` for several: `event-fn` then gets one value per path.
 - `:dispatch-first?` (default `true`) also dispatches for the values at
   registration; `false` waits for the first change.
-- A value counts as changed when it is not `=` to the last one.
+- A value counts as changed when it is not `=` to the last one. Changes are
+  batched: several events in one tick fire the track once, with the final
+  values (a path set 1 → 2 → 1 within one tick does not fire).
+- Registering an id again replaces that track, so re-registering in a hot
+  reload hook runs the new `event-fn`.
+- An `event-fn` whose event changes the track's own path loops; `flush!`
+  stops it in tests ("did not settle"), a browser would keep going.
 - Both effects take a map or a vector of maps; `hammer.track/register!` and
   `dispose!` do the same outside an event.
 - A track is a component instance without a body or DOM: its paths subscribe in
