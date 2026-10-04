@@ -436,8 +436,9 @@ Locally: `bb jar 0.1.0`, or `clojure -T:build deploy :version '"0.1.0"'`.
 Every dependency is pinned to an exact version: npm (`.npmrc` has
 `save-exact=true`), `deps.edn`, the GitHub Actions (by commit SHA), the runner
 and the CI toolchain (Java, Node, Clojure CLI, babashka, in the workflows'
-`env`). [Renovate](https://docs.renovatebot.com/) (`renovate.json`) opens
-grouped update PRs weekly and keeps the pins exact.
+`env`). Dependabot (`.github/dependabot.yml`) opens update PRs weekly for npm
+and the GitHub Actions; the Clojure deps, the runner and the CI toolchain
+versions are bumped by hand.
 
 The repository-local `hammer-internals` skill (`.claude/skills/`) explains the
 internals to an agent working on hammer itself.
