@@ -22,7 +22,7 @@
       "groupName": "GitHub Actions"
     },
     {
-      "description": "One PR for minor and patch npm dev dependencies (shadow-cljs, jsdom, puppeteer-core, tokenizer)",
+      "description": "One PR for minor and patch npm dev dependencies (shadow-cljs, jsdom, puppeteer-core)",
       "matchManagers": [
         "npm"
       ],

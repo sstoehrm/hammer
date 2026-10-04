@@ -1,27 +1,8 @@
 {:tasks
  {:requires ([babashka.fs :as fs]
-             [babashka.http-client :as http]
              [clojure.edn :as edn]
              [clojure.java.io :as io]
              [clojure.string :as str])
-
-  tokens
-  {:doc "TodoMVC token count, hammer vs re-frame (pinned commit), comments stripped"
-   :task (let [sha "1a1bf1df6570b17a148ebce70d500ec2da393cdc"
-               base (str "https://raw.githubusercontent.com/day8/re-frame/" sha
-                         "/examples/todomvc/src/todomvc/")
-               strip (fn [s]
-                       (->> (str/split-lines s)
-                            (map (fn [line] (str/replace line (re-pattern "\\s*;.*$") "")))
-                            (remove str/blank?)
-                            (str/join "\n")))
-               rf (str/join "\n" (for [f ["core" "db" "events" "subs" "views"]]
-                                   (strip (:body (http/get (str base f ".cljs"))))))
-               ours (strip (slurp "examples/todomvc/src/todomvc/core.cljs"))]
-           (fs/create-dirs "target/tokens")
-           (spit "target/tokens/re-frame.cljs" rf)
-           (spit "target/tokens/hammer.cljs" ours)
-           (shell "node scripts/count-tokens.cjs target/tokens/re-frame.cljs target/tokens/hammer.cljs"))}
 
   jar
   {:doc "Release jar: bb jar 0.1.0 (or v0.1.0) → target/hammer-0.1.0.jar"
