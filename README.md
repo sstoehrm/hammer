@@ -30,7 +30,7 @@ is convenient, because that's the only kind of nail it can hit.
 Because I wanted a really fast ClojureScript frontend library that can compete
 with the other frameworks. It is also token efficient if you develop with the
 skill: see [stack-cap-bench](https://github.com/sstoehrm/stack-cap-bench) (trust
-me, it is not faked ;)).
+me, bro).
 
 Why is it fast? I have literally no clue: Claude developed and optimized it,
 but it seems to be somewhat legit. What it does to be fast, and the numbers, are
