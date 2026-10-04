@@ -9,12 +9,35 @@
    :task (shell "clojure -T:build jar :version" (pr-str (first *command-line-args*)))}
 
   release:check
-  {:doc "Fails unless the tag (v0.1.0) is a plain semver version"
-   :task (let [t (first *command-line-args*)]
+  {:doc "Fails unless the tag (v0.1.0) is a plain semver version and both hammer-app plugin manifests carry its version"
+   :task (let [t (first *command-line-args*)
+               fail! (fn [& msg] (binding [*out* *err*] (apply println "release:check:" msg)) (System/exit 1))]
            (when-not (and t (re-matches (re-pattern "v\\d+\\.\\d+\\.\\d+(-[\\w.]+)?") t))
-             (binding [*out* *err*] (println "release:check: tag must look like v0.1.0, got" (pr-str t)))
-             (System/exit 1))
+             (fail! "tag must look like v0.1.0, got" (pr-str t)))
+           (let [v (subs t 1)
+                 manifests ["plugins/hammer-app/.claude-plugin/plugin.json"
+                            "plugins/hammer-app/.codex-plugin/plugin.json"]
+                 wrong (for [m manifests
+                             :let [mv (get (cheshire.core/parse-string (slurp m)) "version")]
+                             :when (not= v mv)]
+                         (str m " has " (pr-str mv)))]
+             (when (seq wrong)
+               (fail! (str "the plugin version must match the tag " t " (bb release:bump " v "):\n  "
+                           (str/join "\n  " wrong)))))
            (println "release:check: ok" t))}
+
+  release:bump
+  {:doc "Sets the hammer-app plugin version in both manifests: bb release:bump 0.2.0 (then commit, merge, tag v0.2.0)"
+   :task (let [v (first *command-line-args*)]
+           (when-not (and v (re-matches (re-pattern "\\d+\\.\\d+\\.\\d+(-[\\w.]+)?") v))
+             (binding [*out* *err*] (println "release:bump: version must look like 0.2.0, got" (pr-str v)))
+             (System/exit 1))
+           (doseq [m ["plugins/hammer-app/.claude-plugin/plugin.json"
+                      "plugins/hammer-app/.codex-plugin/plugin.json"]]
+             ;; replace the value only, so the file keeps its formatting
+             (spit m (str/replace-first (slurp m) (re-pattern "\"version\": \"[^\"]*\"")
+                                        (str "\"version\": \"" v "\"")))
+             (println "release:bump:" m "→" v)))}
 
   loc
   {:doc "Non-blank, non-comment lines in src/hammer"
