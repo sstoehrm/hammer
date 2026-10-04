@@ -52,7 +52,7 @@ jobs:
             ~/.gitlibs
           key: deps-${{ hashFiles('deps.edn', 'shadow-cljs.edn', 'bb.edn') }}
 
-      - name: Tag is a version
+      - name: Tag is a version and the plugin version matches it
         run: bb release:check ${{ github.ref_name }}
 
       - run: npm ci

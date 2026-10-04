@@ -419,11 +419,16 @@ as a `:local/root` dep (`cd examples/counter && clj -M:dev` → http://localhost
 CI (`.github/workflows/ci.yml`) runs the tests, `bb sizes`, the release builds
 and a jar build on every push to `main` and every pull request.
 
-**Releasing:** tag a version and push the tag:
+**Releasing:** bump the `hammer-app` plugin to the new version (both
+manifests, `.claude-plugin` and `.codex-plugin`), merge that, then tag the
+merged commit and push the tag:
 
-    git tag v0.1.0 && git push origin v0.1.0
+    bb release:bump 0.2.0          # commit and merge this first
+    git tag v0.2.0 && git push origin v0.2.0
 
-`.github/workflows/release.yml` then checks the tag, runs the tests, builds
+`.github/workflows/release.yml` then checks the tag (and fails unless both
+plugin manifests carry its version, so the skill is always released with the
+library), runs the tests, builds
 `target/hammer-0.1.0.jar` and creates a GitHub release with the jar attached.
 Apps use the tag through the git coordinate above.
 
