@@ -7,7 +7,8 @@
             [goog.object :as gobj]
             [hammer.cells :as cells]
             [hammer.events :as events]
-            [hammer.log :as log]))
+            [hammer.log :as log]
+            [hammer.attrs :refer [set-plain!]]))
 
 ;; t :text/:el/:comp, or :tpl (from defc): tag = Tpl, attrs = hole values,
 ;; args (:comp) = the whole hiccup vector, props from index 1;
@@ -120,6 +121,8 @@
   "Stores handler v for event type t on el; registers t for delegation when
   reg? (the element had no handler for t before)."
   [^js el t v reg?]
+  ;; gated here, not only inside: the key string would be built in release too
+  (when ^boolean goog/DEBUG (log/check-handler! (str ":on-" t) v))
   (let [hs (or (.-__cuiH el) (let [o #js {}] (set! (.-__cuiH el) o) o))]
     (when reg? (.add new-types t))
     (gobj/set hs t v)))
@@ -152,19 +155,6 @@
     (let [v (if (= n "value") (str (or v "")) (boolean v))]
       (when (not= v (gobj/get el n)) (gobj/set el n v)))))
 
-(defn- enumerated?
-  "Attributes whose value is the string \"true\" or \"false\", not presence."
-  [n]
-  (or (= n "draggable") (= n "spellcheck") (= n "contenteditable") (= n "writingsuggestions")
-      (str/starts-with? n "aria-")))
-
-(defn- set-plain! [^js el n v]
-  (cond
-    (nil? v) (.removeAttribute el n)
-    (and (boolean? v) (enumerated? n)) (.setAttribute el n (if v "true" "false"))
-    (false? v) (.removeAttribute el n)
-    (true? v) (.setAttribute el n "")
-    :else (.setAttribute el n (str v))))
 
 (defn- set-attr! [^js el k old v]
   (let [n (name k)]
@@ -216,14 +206,26 @@
 
 (declare mount-inst! patch! create! unmount! patch-kids! host-render)
 
+;; ---- namespaces: elements below :svg are SVG, until a foreignObject
+
+(def ^:private svg-ns "http://www.w3.org/2000/svg")
+
+(defn- kid-ns
+  "The namespace of elements created as children of el: SVG inside an SVG
+  element other than foreignObject, else nil (HTML)."
+  [^js el]
+  (when (and (identical? svg-ns (.-namespaceURI el)) (not (identical? "foreignObject" (.-localName el))))
+    svg-ns))
+
 (defn- insert-from!
   "Creates nu[from..to) into one DocumentFragment and inserts it before anchor
   (nil: appends)."
   [^js el ^js nu from to anchor depth]
-  (let [f (.createDocumentFragment js/document)]
+  (let [f (.createDocumentFragment js/document)
+        ns (kid-ns el)]
     (loop [i from]
       (when (< i to)
-        (.appendChild f (create! (aget nu i) depth))
+        (.appendChild f (create! (aget nu i) depth ns))
         (recur (inc i))))
     (.insertBefore el f anchor)))
 
@@ -238,7 +240,7 @@
 
 ;; ---- templates (compiled by defc)
 
-(deftype Tpl [skel ^:mutable proto kinds names resolve])
+(deftype Tpl [skel ^:mutable proto ^:mutable svg-proto kinds names resolve])
 
 (defn template
   "Built by defc. skel: the static hiccup, with \"\" at each kid hole and
@@ -248,15 +250,22 @@
   node, also the region's end anchor), 1 sole kid (node: its element),
   2 attr, 3 :class, 4 :style, 5 :value/:checked/:selected, 6 :on-*, 7 :ref."
   [skel kinds names resolve]
-  (Tpl. skel nil kinds names resolve))
+  (Tpl. skel nil nil kinds names resolve))
 
 (defn- proto
-  "The template's DOM, built once on first use and then cloned."
-  [^Tpl d]
-  (or (.-proto d)
-      (let [n (create! (normalize (.-skel d)) 0)]
-        (set! (.-proto d) n)
-        n)))
+  "The template's DOM in namespace ns (nil: HTML), built once on first use
+  there and then cloned: a template rooted at [:circle] is an SVG circle
+  inside an svg and an HTML element elsewhere."
+  [^Tpl d ns]
+  (if ns
+    (or (.-svg-proto d)
+        (let [n (create! (normalize (.-skel d)) 0 ns)]
+          (set! (.-svg-proto d) n)
+          n))
+    (or (.-proto d)
+        (let [n (create! (normalize (.-skel d)) 0 nil)]
+          (set! (.-proto d) n)
+          n))))
 
 (defn- hiccup? [x] (or (vector? x) (seq? x) (instance? VNode x)))
 
@@ -322,9 +331,9 @@
   "Clones the template, resolves the hole nodes and writes every hole.
   Holes are in post-order, so kids exist before their element's attrs
   (select :value) and refs queue children first."
-  [^VNode v depth]
+  [^VNode v depth ns]
   (let [^Tpl d (.-tag v)
-        root (.cloneNode ^js (proto d) true)
+        root (.cloneNode ^js (proto d ns) true)
         nodes ((.-resolve d) root)
         vals (.-attrs v)
         kinds (.-kinds d)
@@ -373,20 +382,26 @@
 ;; ---- create / unmount
 
 (defn- create!
-  "Builds the DOM for v, owned by an instance at depth. Returns the node."
-  [^VNode v depth]
+  "Builds the DOM for v, owned by an instance at depth, in namespace ns (nil:
+  HTML; :svg switches to SVG, a foreignObject's children back to HTML).
+  Returns the node."
+  [^VNode v depth ns]
   (case (.-t v)
     :text (let [n (.createTextNode js/document (.-text v))]
             (set! (.-el v) n)
             n)
-    :el (let [el (.createElement js/document (.-tag v))
+    :el (let [tag (.-tag v)
+              ;; identical? is === on strings; = would go through cljs.core/=
+              ns (if (identical? tag "svg") svg-ns ns)
+              el (if ns (.createElementNS js/document ns tag) (.createElement js/document tag))
+              kns (when (and ns (not (identical? tag "foreignObject"))) ns)
               attrs (.-attrs v)]
-          (.forEach (.-kids v) (fn [k] (.appendChild el (create! k depth))))
+          (.forEach (.-kids v) (fn [k] (.appendChild el (create! k depth kns))))
           (set-attrs! el nil attrs)
           (when-let [r (:ref attrs)] (.push ref-queue #js [r el]))
           (set! (.-el v) el)
           el)
-    :tpl (create-tpl! v depth)
+    :tpl (create-tpl! v depth ns)
     :comp (let [c (.-comp v)
                 inst (cells/create c (.-args v) 1 (inc depth))]
             (set! (.-inst v) inst)
@@ -413,12 +428,12 @@
                                          " returned nil; it must return a DOM node"))))
                 (set! (.-el v) n)
                 n)
-              (mount-inst! inst)))))
+              (mount-inst! inst ns)))))
 
 (defn- host-render
   "Given to Host create: builds plain hiccup (no components) into a node."
   [hiccup]
-  (create! (normalize hiccup) 0))
+  (create! (normalize hiccup) 0 nil))
 
 (defn- body-vnode
   "Renders inst to a VNode; logs and returns nil if the body throws."
@@ -429,10 +444,10 @@
       (log/report! :error (str "hammer: render failed in " (.-cname ^cells/Comp (.-comp inst))) e)
       nil)))
 
-(defn- mount-inst! [^cells/Instance inst]
+(defn- mount-inst! [^cells/Instance inst ns]
   (let [v (or (body-vnode inst) (text-vnode ""))]
     (set! (.-vnode inst) v)
-    (create! v (.-depth inst))))
+    (create! v (.-depth inst) ns)))
 
 (defn- unmount!
   "Depth-first: unsubscribes instances and calls :ref with nil. Leaves the DOM."
@@ -465,7 +480,7 @@
 
 (defn- replace! [^VNode old ^VNode nu depth]
   (let [o (node-of old)
-        n (create! nu depth)]
+        n (create! nu depth (kid-ns (.-parentNode ^js o)))]
     (.replaceChild (.-parentNode ^js o) n o)
     (unmount! old)))
 
@@ -589,7 +604,8 @@
           (insert-from! el nu 0 nn end depth))
 
       :else
-      (let [src (.fill (js/Array. (- ne s)) 0)] ; new middle pos → old index + 1, 0 = new
+      (let [src (.fill (js/Array. (- ne s)) 0) ; new middle pos → old index + 1, 0 = new
+            ns (kid-ns el)]
         (loop [j s]
           (when (< j (- no t))
             (let [o (aget old j)]
@@ -602,7 +618,7 @@
           (let [j (aget src i)]
             (if (pos? j)
               (patch! (aget old (dec j)) (aget nu (+ s i)) depth)
-              (create! (aget nu (+ s i)) depth))))
+              (create! (aget nu (+ s i)) depth ns))))
         (let [keep (lis src)]
           (loop [i (dec (alength src)) k (dec (alength keep))]
             (when (>= i 0)
@@ -665,7 +681,7 @@
   (when-not (.-__cuiT ^js el) (set! (.-__cuiT ^js el) (js/Set.)))
   (.clear new-types)
   (let [v (normalize hiccup)]
-    (.appendChild ^js el (create! v 0))
+    (.appendChild ^js el (create! v 0 (kid-ns el)))
     (cells/set-root! el (fn [] (unmount! v) (set! (.-textContent ^js el) "")))
     (listen-root! el)
     (run-refs!)))

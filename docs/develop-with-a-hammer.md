@@ -64,7 +64,8 @@ and each re-renders by diffing only its own hiccup.
 | `(mount! hiccup el)` | render into `el`, keeping the current db |
 | `(on-error! (fn [{:keys [level message error]}]))` | replaces the console as the place hammer reports to; `nil` restores it |
 
-Hiccup: `:on-<dom-event>` takes an event vector or fn; `:ref` fn gets the element,
+Hiccup: `:on-<dom-event>` takes an event vector or fn (anything else is ignored,
+with a warning in dev builds); `:ref` fn gets the element,
 and `nil` on removal, so write it as `#(some-> % .focus)` rather than assuming a
 non-nil element. Handlers run from one capture-phase listener per event type on
 the `mount!` container, so `(.-currentTarget e)` is that container; a fn
@@ -78,8 +79,11 @@ and `aria-*`, which take
 the strings `"true"`/`"false"`; anything else is written with `str`.
 `:class` string or collection;
 `:style` map of CSS property names (`:background-color`; dev builds warn on
-`:backgroundColor`) or a CSS string. SVG is
-not supported in v1 — elements are created with `createElement`.
+`:backgroundColor`) or a CSS string. SVG works: `[:svg {:viewBox "0 0 10 10"} [:circle {:r 5}]]`
+creates SVG elements from `:svg` down (a `foreignObject`'s children are HTML
+again), in components and on every update. Attribute names keep their case
+(`:viewBox`). Use `:href`, not `:xlink:href`. A canvas component inside an
+`:svg` needs a `:foreignObject` around it.
 
 Errors: hammer does not throw for a failing handler, fx, render or draw, or for
 a mistake like a missing handler or a handler that returns `db` instead of
@@ -130,6 +134,143 @@ an alias of one. Anywhere else, e.g. nested inside another expression, calling
 The 2-arity `mount!` renders without touching `app-db`; call it from a
 `^:dev/after-load` hook so a hot reload re-renders with whatever db state the
 running app already has, instead of resetting it.
+
+## HTTP
+
+`(:require [hammer.http])` registers the `:http` effect, built on `fetch`. Key
+names follow re-frame's http-fx where they mean the same; it has no
+dependencies, and apps that don't require it pay nothing (it adds about 2.8 KB
+gzip when used).
+
+```clojure
+(reg-event :load (fn [_ q] {:http {:uri "/api/items" :params {:q q}
+                                   :abort-key :search
+                                   :on-success [:loaded] :on-failure [:failed]}}))
+(reg-event :loaded (fn [db items] {:db (assoc db :items items)}))
+(reg-event :save (fn [db] {:http {:method :post :uri "/api/items" :body (:draft db)
+                                  :headers {"Authorization" (str "Bearer " (:token db))}
+                                  :on-success [:saved]}}))
+```
+
+| Key | Default | |
+|---|---|---|
+| `:method` | `:get` | any HTTP method |
+| `:uri` | required | |
+| `:params` | — | always the query string (also for POST, unlike re-frame's http-fx), placed before any `#fragment`; a sequential value repeats the key, `nil` is skipped |
+| `:body` | — | clj data or a plain `#js` object is sent as JSON with `Content-Type: application/json`; a string, `FormData`, `Blob`, … as is. Not allowed with GET/HEAD (reported). |
+| `:headers` | — | a map of header → value, or a `js/Headers` |
+| `:timeout` | none | ms; fails with `:failure :timeout` |
+| `:abort-key` | — | a newer request with the same key aborts the older one, which then dispatches nothing |
+| `:response-format` | `:json` | `:json`, `:text`, `:blob`, or `:raw` (the `Response`) |
+| `:keywords?` | `true` | keywordize JSON keys |
+| `:fetch-options` | — | merged into fetch's init: `:credentials`, `:mode`, `:cache`, … |
+| `:on-success` | — | event vector; the body is appended (`nil` for an empty body) |
+| `:on-failure` | — | event vector; `{:uri :status :status-text :failure :response}` is appended. `:failure` is `:error` (non-2xx, `:response` is the parsed body), `:network`, `:timeout` or `:parse`. Without it, the failure is reported through `on-error!` and fails `flush!` in tests. |
+
+A vector of request maps runs each; a `nil` request is skipped. A malformed
+request (no `:uri`, an `:on-success` that is not a vector, an unknown
+`:response-format`) is reported and not sent. A request aborted by a newer one
+with the same `:abort-key` dispatches nothing, even if its response was already
+on the way. To add auth to every request, or to stub
+requests in tests, replace fetch: `(hammer.http/set-fetch! (fn [url init]
+promise-of-Response))`; `nil` restores `js/fetch`.
+
+## Tracks
+
+A track dispatches an event when the values at db paths change, without a
+component: react to a filter change by loading data, keep a URL in sync, save
+a draft. `(:require [hammer.track])` registers two effects:
+
+```clojure
+(reg-event :open (fn [_] {:hammer.track/register
+                          {:id :reload :path [:filters]
+                           :event-fn (fn [filters] [:load filters])}}))  ; nil: dispatch nothing
+(reg-event :close (fn [_] {:hammer.track/dispose {:id :reload}}))
+```
+
+- `:path`, or `:paths` for several: `event-fn` then gets one value per path.
+- `:dispatch-first?` (default `true`) also dispatches for the values at
+  registration; `false` waits for the first change.
+- A value counts as changed when it is not `=` to the last one. Changes are
+  batched: several events in one tick fire the track once, with the final
+  values (a path set 1 → 2 → 1 within one tick does not fire).
+- Registering an id again replaces that track, so re-registering in a hot
+  reload hook runs the new `event-fn`.
+- An `event-fn` whose event changes the track's own path loops; `flush!`
+  stops it in tests ("did not settle"), a browser would keep going.
+- Both effects take a map or a vector of maps; `hammer.track/register!` and
+  `dispose!` do the same outside an event.
+- A track is a component instance without a body or DOM: its paths subscribe in
+  the path trie like any binding, so only tracks whose paths changed run, in the
+  render flush after the event that changed them. The event it dispatches runs
+  next.
+- `hammer.testing/reset-app!` disposes every track.
+
+## Tubes
+
+Tubes send event vectors between the app and a server over a WebSocket, both
+ways: throw `[:say-hello "x"]` at the server, and let the server push events
+back. Inspired by [pneumatic-tubes](https://github.com/drapanjanas/pneumatic-tubes);
+this is the client side only, with its own small protocol, so any server that
+speaks it works. `(:require [hammer.tubes])` registers three effects:
+
+```clojure
+(reg-event :init (fn [_] {:hammer.tubes/create {:url "ws://localhost:9090/ws"
+                                                :params {:token "abc"}       ; → ?token=abc
+                                                :on-connect [:online]        ; event vector or fn
+                                                :on-disconnect [:offline]}}))
+(reg-event :say-hello (fn [db name] {:db (assoc db :greeting name)
+                                     :hammer.tubes/send [:say-hello name]})) ; to the server
+(reg-event :say-hello-processed (fn [db] ...))                               ; pushed by the server
+(reg-event :logout (fn [_] {:hammer.tubes/destroy {}}))
+```
+
+- **Protocol:** one text frame per event, the event vector as EDN (`pr-str`
+  out, the EDN reader in, nothing is evaluated). Send data that prints as EDN.
+- **Incoming:** every event from the server is dispatched; `:on-receive (fn
+  [event])` replaces that, e.g. to accept only some events.
+- **Outgoing:** `:hammer.tubes/send` takes an event vector, or `{:id :event}`.
+  While disconnected (or while the socket is closing), events are queued and go
+  out in order on the next connect, before `:on-connect` is dispatched. The
+  queue has no size limit. An event in flight when a connection silently dies
+  can still be lost; that is inherent to WebSockets.
+- **Reconnect:** a dropped connection reconnects after a random backoff whose
+  maximum grows by 1 s per attempt up to 30 s (`:backoff (fn [attempt] ms)`
+  replaces it), reset after a successful connect. `:hammer.tubes/destroy` closes
+  for good, without `:on-disconnect`. A server that accepts and then closes
+  (e.g. rejecting a token) is retried quickly forever: destroy the tube from
+  `:on-disconnect` when that happens.
+- **Several tubes:** `:id` on each effect (default `:default`); creating an id
+  again replaces that tube.
+- **Errors:** unreadable, empty, non-text or multi-form frames, non-event
+  frames, a hook or `:on-receive` that throws, a url the WebSocket can't open
+  (the tube is removed), a send to no tube and malformed options are reported
+  through `on-error!`.
+- **Testing:** `(hammer.tubes/set-websocket! (fn [url] fake-socket))` swaps in a
+  fake WebSocket; `reset-app!` destroys every tube.
+- **Size:** about 14 KB gzip in apps that require it, nearly all of it the EDN
+  reader; nothing otherwise.
+
+A matching server, here with http-kit (not shipped with hammer):
+
+```clojure
+(require '[org.httpkit.server :as http] '[clojure.edn :as edn])
+
+(defonce clients (atom #{}))
+
+(defn ws-handler [req]
+  (http/as-channel req
+    {:on-open    (fn [ch] (swap! clients conj ch))
+     :on-close   (fn [ch _] (swap! clients disj ch))
+     :on-receive (fn [ch msg]
+                   (let [[id & args] (edn/read-string msg)]
+                     (case id
+                       :say-hello (http/send! ch (pr-str [:say-hello-processed (first args)]))
+                       nil)))}))
+
+(defn push-all! [event]                 ; dispatch on every connected client
+  (doseq [ch @clients] (http/send! ch (pr-str event))))
+```
 
 ## Testing
 
@@ -212,7 +353,7 @@ fn just mutates it directly, same as an atom would, without the watch.
 | `:on-*` | all | Canvas DOM events, e.g. `:on-click`, `:on-pointermove`. A fn gets `(e {:x :y})` in canvas-local CSS pixels; an event vector is dispatched with `x y` appended, e.g. `[:pick]` → `[:pick 120 48]`. |
 | `:fallback` | `hammer.gl` | Hiccup rendered instead of the canvas when WebGL2 is unavailable (DOM embedding only). **Static: plain hiccup only** — no components, no `:on-*` handlers, no `:ref`. It is rendered once through the DOM renderer's internal host-render and is never mounted or unmounted as a component tree, so nothing in it is reactive. |
 | `:on-unsupported` | `hammer.gl` | `(fn [reason])` called when WebGL2 is unavailable. |
-| `:attrs` | all | Extra attributes for the `<canvas>` element (`:class`, `:style`, `:aria-label`, …). |
+| `:attrs` | all | Extra attributes for the `<canvas>` element (`:class`, `:style`, `:aria-label`, …). Values follow the DOM attribute rules: `nil`/`false` remove, `true` writes an empty attribute, `aria-*` and `draggable` take `"true"`/`"false"`. `:class` and `:style` take a string or collection and a map. |
 
 The draw fn's arguments:
 

@@ -20,10 +20,15 @@ in [docs/performance.md](docs/performance.md).
 ## Features
 
 - re-frame-style events and effects: `reg-event`, `reg-fx`, `dispatch`, effect
-  maps, without React and without subscriptions.
+  maps, without React and without subscriptions, and a built-in `:http` effect
+  (`hammer.http`, fetch-based, no dependencies).
 - Components name the app-db paths they read. A path trie re-renders exactly the
   components whose paths changed, and each one diffs only its own hiccup.
 - `is?` bindings for selections: only the rows whose result flips re-render.
+- Tracks (`hammer.track`): dispatch an event when db paths change, without a
+  component, through the same path trie.
+- Tubes (`hammer.tubes`): event vectors to and from a server over a WebSocket,
+  as EDN, with queueing and reconnect.
 - Local state (`atom` bindings), derived bindings that recompute only when what
   they use changes, and global atoms deref'd in a component tracked
   automatically.
@@ -53,15 +58,16 @@ No clue. Use with caution.
 - [ ] First release: tag `v0.1.0` (GitHub release with the jar; use it via the
   git tag).
 - [ ] Publish on Clojars once the git releases are verified.
-- [ ] A built-in HTTP effect (`fetch`-based `:http`), so apps don't each write one.
-- [ ] SVG: elements are created with `createElement`, so `<svg>` content does not
-  render yet.
-- [ ] Canvas components' `:attrs` follow the DOM attribute rules (booleans,
+- [x] A built-in HTTP effect (`fetch`-based `:http`), so apps don't each write one.
+- [x] SVG: elements below `:svg` are created in the SVG namespace.
+- [x] Canvas components' `:attrs` follow the DOM attribute rules (booleans,
   `aria-*`).
-- [ ] Warn when an `:on-*` handler is a keyword, set or map (ignored today).
+- [x] Warn when an `:on-*` handler is a keyword, set or map (dev builds).
 - [ ] Track global atoms deref'd in helper functions, not only in the component.
 - [ ] 3D on top of `hammer.gl`: meshes, cameras, materials, a scene graph.
 
 ## Special thanks
 
-To [re-frame](https://github.com/day8/re-frame) for the API inspiration.
+To [re-frame](https://github.com/day8/re-frame) for the API inspiration, and to
+Artūr Girenko for [pneumatic-tubes](https://github.com/drapanjanas/pneumatic-tubes),
+the idea behind `hammer.tubes`.

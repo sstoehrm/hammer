@@ -505,3 +505,30 @@
       ;; already ran) so it doesn't linger into another namespace's test of
       ;; hammer.cells/unmount-roots! sharing the same global registry.
       (capture-errors (fn [_] (t/reset-app!))))))
+
+;; ---- :attrs follow the DOM attribute rules
+
+(defdraw flagged [] [f [:flag]] {:size [10 10] :attrs {:id "flagged" :hidden f :aria-hidden f :draggable (not f) :data-n 1}}
+  (fn [_ _]))
+
+(deftest canvas-attrs-follow-dom-rules
+  (reset! state/app-db {:flag false})
+  (let [host (div)]
+    (core/mount! [flagged] host)
+    (t/frame! 0)
+    (let [c (.querySelector host "#flagged")
+          attrs #(into {} (map (fn [^js a] [(.-name a) (.-value a)])) (js/Array.from (.-attributes c)))]
+      (is (= {"aria-hidden" "false" "draggable" "true" "data-n" "1"}
+             (dissoc (attrs) "id" "style" "width" "height" "class"))
+          "false removes hidden; aria-* and draggable take true/false")
+      (events/dispatch-sync [::set :flag true])
+      (t/frame! 16)
+      (is (= {"hidden" "" "aria-hidden" "true" "draggable" "false" "data-n" "1"}
+             (dissoc (attrs) "id" "style" "width" "height" "class"))))))
+
+(defdraw keyword-click [] [] {:size [10 10] :on-click :pick :on-pointermove [:ok]} (fn [_ _]))
+
+(deftest canvas-non-fn-non-vector-handlers-warn
+  (let [warns (t/expect-errors #(do (cv/mount! [keyword-click] (div)) (t/frame! 0)))]
+    (is (= ["hammer: :on-click must be an event vector or a fn, got :pick (wrap a multimethod or other callable in #(...))"]
+           (mapv :message warns)))))

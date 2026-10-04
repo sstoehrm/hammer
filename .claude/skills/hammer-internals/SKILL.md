@@ -1,6 +1,6 @@
 ---
 name: hammer-internals
-description: Use when reading, modifying, debugging, or building apps with the hammer ClojureScript UI framework (src/hammer) — components re-rendering too often or not at all, defc binding kinds (path, atom, derived), event handlers and effects, render order, keyed lists, defdraw/defloop canvas or WebGL2 draw components, or changing dom/cells/trie/scheduler/draw/canvas/gl code.
+description: Use when working on hammer itself in this repository (src/hammer, its tests, benchmarks and examples) — reading, modifying or debugging the dom/cells/trie/scheduler/events/draw/canvas/gl/macros code, the update pipeline, compiled templates, binding kinds, keyed diff, or defdraw/defloop internals. For building an app with hammer, use the hammer-app plugin skill instead.
 ---
 
 # hammer internals
@@ -29,6 +29,10 @@ and an example are in `docs/develop-with-a-hammer.md`; this skill covers what on
 | `canvas.cljs` | Canvas 2D facade: re-exports `hammer.app` and `draw/mount!`, registers the `:canvas` backend (`getContext "2d"`, `setTransform` for DPR); `canvas.clj` has its thin `defdraw`/`defloop` macros (call `macros/draw-def`) |
 | `gl.cljs` | WebGL2 facade: registers the `:gl` backend — one `WebGL2RenderingContext` per component (`getContext "webgl2" context-attrs`), viewport set before every draw, `:fallback`/`:on-unsupported` when unavailable (logged once per page), `webglcontextlost`/`webglcontextrestored` handling (`:dispose` / re-`:init` and redraw, loop clock freezes while lost), and releasing the context (`WEBGL_lose_context`) on unmount for a canvas hammer created (an adopted canvas keeps its context across remounts — see `State`'s `adopted?`); `gl.clj` has its `defdraw`/`defloop` macros |
 | `state.cljs` | `app-db` atom and root trie node |
+| `attrs.cljs` | `set-plain!`: how an attribute value is written (`nil`/booleans/enumerated `"true"`/`"false"`), shared by `dom.cljs` and the canvas `:attrs` in `draw.cljs` (no deps, so the draw bundles stay free of `hammer.dom`) |
+| `http.cljs` | the `:http` fx, registered on require: fetch with `AbortController` (timeout, `:abort-key` via an in-flight map keyed by value), body/params encoding, success/failure dispatch, `set-fetch!` to replace fetch; not required by any facade |
+| `track.cljs` | tracks (`:hammer.track/register`/`dispose` fx): each is a `Comp` with one `:path` spec per path, no body, and a shared `Host` whose `run` (`step!`) calls `refresh!` and dispatches `(event-fn vals…)`; the instance's `vnode` slot holds `{:id :f}`; registry keyed by value; `reset-app!` calls `dispose-all!` |
+| `tubes.cljs` | tubes (`:hammer.tubes/create`/`send`/`destroy` fx): per id a `#js` state (socket, outgoing queue of EDN strings, attempt, timer, connected/closed) in a value-keyed map; `connect!` wires the socket, `onclose` reconnects with backoff unless `closed`; frames read with `cljs.reader/read-string` (EDN) and dispatched; `set-websocket!` for tests; `reset-app!` calls `destroy-all!` |
 | `log.cljs` | `report!` — every `hammer:` error/warning goes through it (no hammer deps, so every ns can require it): to the test collector when on, then to the reporter (`on-error!`, default console) |
 | `testing.cljs` | sync `flush!` and `frame!` (both end with `check-errors!`: throw on collected `:error` reports), `expect-errors`, render counters, `reset-app!`; loading it turns on `hammer.log`'s collector |
 
@@ -180,6 +184,7 @@ can't draw. On `webglcontextrestored` it calls `draw/queue!`, which requests a f
 | Input value "fights" typing | `:value/:checked/:selected` are compared to the live element, so the db must hold the current value |
 | `:ref` gets `nil` | called with `nil` on unmount; refs run after insertion into the document |
 | Body shows stale global/db state | the body re-runs only when a slot it names changes. `@global` written in the body or a binding init is auto-bound; one read inside any fn (render-time lambdas too) or a helper fn is not, so bind it (`[g some-atom]`). `@app-db` warns: use a path binding |
+| SVG element created as HTML | `create!` threads the namespace (`:svg` → SVG, `foreignObject` kids → HTML); paths that only have the parent element use `kid-ns` of it; a `Tpl` keeps one prototype per namespace (`proto`/`svg-proto`) |
 | Extra empty text node in `childNodes` | a `nil` kid hole, or a hiccup-valued hole among siblings, keeps its (empty) text node; invisible to `innerHTML`/`children`/`:empty` |
 | Throw doesn't crash the app | binding init → nil slot; body throw → old DOM kept; the runner catches per instance. It is reported through `hammer.log/report!`: the console (or the `on-error!` reporter), and a throw from the next `testing/flush!` |
 | `:style {:backgroundColor …}` does nothing | style keys are CSS names (`:background-color`); dev builds warn. A string `:style` sets `cssText` |

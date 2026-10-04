@@ -3,6 +3,8 @@
   on hammer.log's collector: flush! throws when hammer reported an error."
   (:require [hammer.events :as events]
             [hammer.log :as log]
+            [hammer.track :as track]
+            [hammer.tubes :as tubes]
             [hammer.scheduler :as sched]
             [hammer.cells :as cells]
             [hammer.dom :as dom]
@@ -63,6 +65,8 @@
   []
   (draw/unmount-all!)
   (dom/unmount-all!)
+  (track/dispose-all!)
+  (tubes/destroy-all!)
   (reset! state/app-db {})
   (log/take!)
   nil)
