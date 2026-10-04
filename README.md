@@ -58,11 +58,6 @@ No clue. Use with caution.
 - [ ] First release: tag `v0.1.0` (GitHub release with the jar; use it via the
   git tag).
 - [ ] Publish on Clojars once the git releases are verified.
-- [x] A built-in HTTP effect (`fetch`-based `:http`), so apps don't each write one.
-- [x] SVG: elements below `:svg` are created in the SVG namespace.
-- [x] Canvas components' `:attrs` follow the DOM attribute rules (booleans,
-  `aria-*`).
-- [x] Warn when an `:on-*` handler is a keyword, set or map (dev builds).
 - [ ] Track global atoms deref'd in helper functions, not only in the component.
 - [ ] 3D on top of `hammer.gl`: meshes, cameras, materials, a scene graph.
 
