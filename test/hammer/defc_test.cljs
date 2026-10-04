@@ -42,11 +42,16 @@
     (cells/destroy! inst)))
 
 (deftest defc-rejects-bad-names-at-compile-time
-  (is (= "defc: bindings need an even number of forms"
+  (is (= "defc bad: bindings need an even number of forms, got [a]"
          (expand-error (hammer.core/defc bad [] [a] nil))))
-  (is (= "defc: props and binding names must be plain symbols"
+  (is (= (str "defc bad: props and binding names must be plain symbols, got {:keys [x]};"
+              " bind the value to a symbol and derive the parts: [m] [x (:x m)]")
          (expand-error (hammer.core/defc bad [{:keys [x]}] [] nil))))
-  (is (= "defc: duplicate prop or binding name"
+  (is (= (str "defc bad: props and binding names must be plain symbols, got [a b];"
+              " bind the value to a symbol and derive the parts: [m] [x (:x m)]")
+         (expand-error (hammer.core/defc bad [] [[a b] [:pair]] nil)))
+      "a destructured binding name")
+  (is (= "defc bad: duplicate prop or binding name a"
          (expand-error (hammer.core/defc bad [a] [a 1] nil))))
   (is (nil? (expand-error (hammer.core/defc ok [a] [b 1] nil)))))
 
