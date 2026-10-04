@@ -74,8 +74,6 @@ No clue. Use with caution.
 
 ## TODO
 
-- [ ] First release: tag `v0.1.0` (GitHub release with the jar; use it via the
-  git tag).
 - [ ] Publish on Clojars once the git releases are verified.
 - [ ] 3D on top of `hammer.gl`: meshes, cameras, materials, a scene graph.
 
