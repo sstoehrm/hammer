@@ -181,6 +181,7 @@ can't draw. On `webglcontextrestored` it calls `draw/queue!`, which requests a f
 | Input value "fights" typing | `:value/:checked/:selected` are compared to the live element, so the db must hold the current value |
 | `:ref` gets `nil` | called with `nil` on unmount; refs run after insertion into the document |
 | Body shows stale global/db state | the body re-runs only when a slot it names changes. `@global` written in the body or a binding init is auto-bound; one read inside any fn (render-time lambdas too) or a helper fn is not, so bind it (`[g some-atom]`). `@app-db` warns: use a path binding |
+| SVG element created as HTML | `create!` threads the namespace (`:svg` → SVG, `foreignObject` kids → HTML); paths that only have the parent element use `kid-ns` of it; a `Tpl` keeps one prototype per namespace (`proto`/`svg-proto`) |
 | Extra empty text node in `childNodes` | a `nil` kid hole, or a hiccup-valued hole among siblings, keeps its (empty) text node; invisible to `innerHTML`/`children`/`:empty` |
 | Throw doesn't crash the app | binding init → nil slot; body throw → old DOM kept; the runner catches per instance. It is reported through `hammer.log/report!`: the console (or the `on-error!` reporter), and a throw from the next `testing/flush!` |
 | `:style {:backgroundColor …}` does nothing | style keys are CSS names (`:background-color`); dev builds warn. A string `:style` sets `cssText` |

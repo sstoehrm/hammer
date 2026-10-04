@@ -79,8 +79,10 @@ and `aria-*`, which take
 the strings `"true"`/`"false"`; anything else is written with `str`.
 `:class` string or collection;
 `:style` map of CSS property names (`:background-color`; dev builds warn on
-`:backgroundColor`) or a CSS string. SVG is
-not supported in v1 — elements are created with `createElement`.
+`:backgroundColor`) or a CSS string. SVG works: `[:svg {:viewBox "0 0 10 10"} [:circle {:r 5}]]`
+creates SVG elements from `:svg` down (a `foreignObject`'s children are HTML
+again), in components and on every update. Attribute names keep their case
+(`:viewBox`).
 
 Errors: hammer does not throw for a failing handler, fx, render or draw, or for
 a mistake like a missing handler or a handler that returns `db` instead of

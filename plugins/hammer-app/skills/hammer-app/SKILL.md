@@ -117,6 +117,9 @@ browser, so you should not need to read hammer's source.
   :background-color "red"}` (dev builds warn on `:backgroundColor`), or a CSS
   string, `"color: red"`. Map values are written with `str`; a key missing in
   the next render is removed.
+- SVG: `[:svg {:viewBox "0 0 10 10"} [:circle {:r 5}]]` creates SVG elements
+  from `:svg` down, `foreignObject` content is HTML again; a component whose
+  root is `[:circle]` works inside an `:svg`. Attribute names keep their case.
 - `:ref` gets the element after insertion and `nil` on removal:
   `:ref #(some-> % .focus)`.
 

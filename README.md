@@ -54,8 +54,7 @@ No clue. Use with caution.
   git tag).
 - [ ] Publish on Clojars once the git releases are verified.
 - [ ] A built-in HTTP effect (`fetch`-based `:http`), so apps don't each write one.
-- [ ] SVG: elements are created with `createElement`, so `<svg>` content does not
-  render yet.
+- [x] SVG: elements below `:svg` are created in the SVG namespace.
 - [x] Canvas components' `:attrs` follow the DOM attribute rules (booleans,
   `aria-*`).
 - [x] Warn when an `:on-*` handler is a keyword, set or map (dev builds).
