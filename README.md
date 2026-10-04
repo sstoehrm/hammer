@@ -25,6 +25,8 @@ in [docs/performance.md](docs/performance.md).
 - Components name the app-db paths they read. A path trie re-renders exactly the
   components whose paths changed, and each one diffs only its own hiccup.
 - `is?` bindings for selections: only the rows whose result flips re-render.
+- Tracks (`hammer.track`): dispatch an event when db paths change, without a
+  component, through the same path trie.
 - Local state (`atom` bindings), derived bindings that recompute only when what
   they use changes, and global atoms deref'd in a component tracked
   automatically.

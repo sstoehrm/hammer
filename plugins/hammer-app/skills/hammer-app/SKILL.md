@@ -106,6 +106,20 @@ browser, so you should not need to read hammer's source.
   `:parse`; without `:on-failure` the failure is reported (and fails tests).
   In tests, stub with `(hammer.http/set-fetch! (fn [url init] promise))`.
 
+## Tracks: events on db changes
+
+`(:require [hammer.track])`, then dispatch an event whenever the values at
+db paths change, without a component (the re-frame "track" pattern):
+
+```clojure
+{:hammer.track/register {:id :reload :path [:filters]               ; or :paths [[:a] [:b]]
+                         :event-fn (fn [filters] [:load filters])}} ; nil = no event
+{:hammer.track/dispose {:id :reload}}
+```
+
+`:dispatch-first?` (default true) also fires for the current values. A change
+is "not `=`"; only tracks whose paths changed run. `reset-app!` disposes all.
+
 ## Hiccup and DOM attributes
 
 - Tags accept `:div#id.cls`. `:class` takes a string or a collection (`nil`s

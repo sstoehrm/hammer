@@ -175,6 +175,31 @@ on the way. To add auth to every request, or to stub
 requests in tests, replace fetch: `(hammer.http/set-fetch! (fn [url init]
 promise-of-Response))`; `nil` restores `js/fetch`.
 
+## Tracks
+
+A track dispatches an event when the values at db paths change, without a
+component: react to a filter change by loading data, keep a URL in sync, save
+a draft. `(:require [hammer.track])` registers two effects:
+
+```clojure
+(reg-event :open (fn [_] {:hammer.track/register
+                          {:id :reload :path [:filters]
+                           :event-fn (fn [filters] [:load filters])}}))  ; nil: dispatch nothing
+(reg-event :close (fn [_] {:hammer.track/dispose {:id :reload}}))
+```
+
+- `:path`, or `:paths` for several: `event-fn` then gets one value per path.
+- `:dispatch-first?` (default `true`) also dispatches for the values at
+  registration; `false` waits for the first change.
+- A value counts as changed when it is not `=` to the last one.
+- Both effects take a map or a vector of maps; `hammer.track/register!` and
+  `dispose!` do the same outside an event.
+- A track is a component instance without a body or DOM: its paths subscribe in
+  the path trie like any binding, so only tracks whose paths changed run, in the
+  render flush after the event that changed them. The event it dispatches runs
+  next.
+- `hammer.testing/reset-app!` disposes every track.
+
 ## Testing
 
 `hammer.testing` provides:

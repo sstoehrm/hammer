@@ -31,6 +31,7 @@ and an example are in `docs/develop-with-a-hammer.md`; this skill covers what on
 | `state.cljs` | `app-db` atom and root trie node |
 | `attrs.cljs` | `set-plain!`: how an attribute value is written (`nil`/booleans/enumerated `"true"`/`"false"`), shared by `dom.cljs` and the canvas `:attrs` in `draw.cljs` (no deps, so the draw bundles stay free of `hammer.dom`) |
 | `http.cljs` | the `:http` fx, registered on require: fetch with `AbortController` (timeout, `:abort-key` via an in-flight map keyed by value), body/params encoding, success/failure dispatch, `set-fetch!` to replace fetch; not required by any facade |
+| `track.cljs` | tracks (`:hammer.track/register`/`dispose` fx): each is a `Comp` with one `:path` spec per path, no body, and a shared `Host` whose `run` (`step!`) calls `refresh!` and dispatches `(event-fn vals…)`; the instance's `vnode` slot holds `{:id :f}`; registry keyed by value; `reset-app!` calls `dispose-all!` |
 | `log.cljs` | `report!` — every `hammer:` error/warning goes through it (no hammer deps, so every ns can require it): to the test collector when on, then to the reporter (`on-error!`, default console) |
 | `testing.cljs` | sync `flush!` and `frame!` (both end with `check-errors!`: throw on collected `:error` reports), `expect-errors`, render counters, `reset-app!`; loading it turns on `hammer.log`'s collector |
 
