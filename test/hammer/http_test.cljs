@@ -61,8 +61,8 @@
        (let [[_ init] (first @calls)]
          (is (= "POST" (.-method init)))
          (is (= "{\"title\":\"milk\"}" (.-body init)))
-         (is (= "application/json" (aget (.-headers init) "Content-Type")))
-         (is (= "t" (aget (.-headers init) "X-Token")))
+         (is (= "application/json" (.get (.-headers init) "content-type")))
+         (is (= "t" (.get (.-headers init) "x-token")))
          (is (= "include" (.-credentials init))))
        (is (= [nil] (:ok @state/app-db)) "an empty body is nil")
        (done)))))
@@ -75,7 +75,7 @@
      (fn []
        (let [[_ init] (first @calls)]
          (is (= "raw" (.-body init)))
-         (is (nil? (aget (.-headers init) "Content-Type"))))
+         (is (nil? (.get (.-headers init) "content-type"))))
        (is (= ["plain"] (:ok @state/app-db)))
        (done)))))
 
@@ -147,3 +147,98 @@
 (deftest a-request-without-uri-is-reported
   (let [r (t/expect-errors #(events/dispatch-sync [::go {:url "/typo"}]))]
     (is (= ["hammer: :http needs a :uri string, got nil"] (mapv :message r)))))
+
+;; ---- review: aborts during the body read, bad options, edge inputs
+
+(defn- slow-body
+  "A Response whose body read waits until the request's signal aborts (then
+  rejects, like real fetch) or until (release!) is called."
+  [^js init status body]
+  (let [release (atom nil)
+        r #js {:ok (<= 200 status 299) :status status :statusText "S"
+               :text (fn [] (js/Promise. (fn [resolve reject]
+                                           (reset! release #(resolve body))
+                                           (.addEventListener (.-signal init) "abort"
+                                                              #(reject (js/Error. "AbortError"))))))}]
+    [r release]))
+
+(deftest superseded-during-body-read-dispatches-nothing
+  (async done
+    (let [first? (atom true)]
+      (stub! (fn [_ init]
+               (if @first?
+                 (do (reset! first? false) (js/Promise.resolve (first (slow-body init 200 "1"))))
+                 (js/Promise.resolve (response 200 "2")))))
+      (events/dispatch [::go {:uri "/a" :abort-key :k :on-success [::oks] :on-failure [::bad]}])
+      (js/setTimeout
+       (fn []
+         (events/dispatch [::go {:uri "/b" :abort-key :k :on-success [::oks] :on-failure [::bad]}])
+         (settle (fn []
+                   (is (= [2] (:oks @state/app-db)))
+                   (is (nil? (:bad @state/app-db)) "no :parse failure for the superseded one")
+                   (done))))
+       5))))
+
+(deftest timeout-during-body-read-is-a-timeout
+  (async done
+    (stub! (fn [_ init] (js/Promise.resolve (first (slow-body init 200 "1")))))
+    (events/dispatch [::go {:uri "/slowbody" :timeout 10 :on-failure [::bad]}])
+    (js/setTimeout #(do (t/flush!)
+                        (is (= :timeout (:failure (first (:bad @state/app-db)))))
+                        (done))
+                   40)))
+
+(deftest timeout-while-reading-an-error-body-is-a-timeout
+  (async done
+    (stub! (fn [_ init] (js/Promise.resolve (first (slow-body init 500 "x")))))
+    (events/dispatch [::go {:uri "/slowerr" :timeout 10 :on-failure [::bad]}])
+    (js/setTimeout #(do (t/flush!)
+                        (is (= :timeout (:failure (first (:bad @state/app-db)))))
+                        (done))
+                   40)))
+
+(deftest a-fetch-ignoring-the-signal-still-drops-the-superseded-answer
+  (async done
+    (let [resolvers (atom [])]
+      (stub! (fn [url _] (js/Promise. (fn [resolve _] (swap! resolvers conj #(resolve (response 200 (str "\"" url "\""))))))))
+      (events/dispatch [::go {:uri "/x1" :abort-key :k2 :on-success [::oks]}])
+      (t/flush!)
+      (events/dispatch [::go {:uri "/x2" :abort-key :k2 :on-success [::oks]}])
+      (t/flush!)
+      (doseq [r @resolvers] (r))
+      (settle (fn [] (is (= ["/x2"] (:oks @state/app-db))) (done))))))
+
+(deftest bad-options-are-reported-and-nil-is-skipped
+  (stub! (fn [_ _] (js/Promise.resolve (response 200 "1"))))
+  (let [r (t/expect-errors #(do (events/dispatch-sync [::go {:uri "/a" :on-success :oops}])
+                                (events/dispatch-sync [::go {:uri "/b" :response-format :jsn}])
+                                (events/dispatch-sync [::go {:uri "/c" :body {:a 1}}])
+                                (events/dispatch-sync [::go nil])
+                                (events/dispatch-sync [::go [nil {:uri "/d" :on-success [::oks]}]])))]
+    (is (= ["hammer: :http :on-success must be an event vector, got :oops"
+            "hammer: :http :response-format must be :json, :text, :blob or :raw, got :jsn"
+            "hammer: :http GET /c has a :body; use :params, or another :method"]
+           (mapv :message r)))
+    (is (= ["/d"] (mapv first @calls)) "only the valid request was sent")))
+
+(deftest headers-instance-js-body-and-fragment
+  (async done
+    (stub! (fn [_ _] (js/Promise.resolve (response 200 ""))))
+    (events/dispatch [::go {:method :post :uri "/f#frag" :params {:q 1}
+                            :headers (js/Headers. #js {"X-A" "1"}) :body #js {:a 1}}])
+    (settle
+     (fn []
+       (let [[url ^js init] (first @calls)]
+         (is (= "/f?q=1#frag" url) "params go before the fragment")
+         (is (= "application/json" (.get (.-headers init) "content-type")))
+         (is (= "1" (.get (.-headers init) "x-a")))
+         (is (= "{\"a\":1}" (.-body init)) "a #js object body is sent as JSON"))
+       (done)))))
+
+(deftest a-throwing-custom-fetch-fails-cleanly
+  (async done
+    (stub! (fn [_ _] (throw (js/Error. "sync"))))
+    (events/dispatch [::go {:uri "/sync" :timeout 50 :on-failure [::bad]}])
+    (settle (fn []
+              (is (= :network (:failure (first (:bad @state/app-db)))))
+              (done)))))

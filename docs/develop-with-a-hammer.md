@@ -156,9 +156,9 @@ gzip when used).
 |---|---|---|
 | `:method` | `:get` | any HTTP method |
 | `:uri` | required | |
-| `:params` | — | appended as a query string; a sequential value repeats the key, `nil` is skipped |
-| `:body` | — | clj data is sent as JSON with `Content-Type: application/json`; a string, `FormData`, `Blob`, … as is |
-| `:headers` | — | map of header → value |
+| `:params` | — | always the query string (also for POST, unlike re-frame's http-fx), placed before any `#fragment`; a sequential value repeats the key, `nil` is skipped |
+| `:body` | — | clj data or a plain `#js` object is sent as JSON with `Content-Type: application/json`; a string, `FormData`, `Blob`, … as is. Not allowed with GET/HEAD (reported). |
+| `:headers` | — | a map of header → value, or a `js/Headers` |
 | `:timeout` | none | ms; fails with `:failure :timeout` |
 | `:abort-key` | — | a newer request with the same key aborts the older one, which then dispatches nothing |
 | `:response-format` | `:json` | `:json`, `:text`, `:blob`, or `:raw` (the `Response`) |
@@ -167,7 +167,11 @@ gzip when used).
 | `:on-success` | — | event vector; the body is appended (`nil` for an empty body) |
 | `:on-failure` | — | event vector; `{:uri :status :status-text :failure :response}` is appended. `:failure` is `:error` (non-2xx, `:response` is the parsed body), `:network`, `:timeout` or `:parse`. Without it, the failure is reported through `on-error!` and fails `flush!` in tests. |
 
-A vector of request maps runs each. To add auth to every request, or to stub
+A vector of request maps runs each; a `nil` request is skipped. A malformed
+request (no `:uri`, an `:on-success` that is not a vector, an unknown
+`:response-format`) is reported and not sent. A request aborted by a newer one
+with the same `:abort-key` dispatches nothing, even if its response was already
+on the way. To add auth to every request, or to stub
 requests in tests, replace fetch: `(hammer.http/set-fetch! (fn [url init]
 promise-of-Response))`; `nil` restores `js/fetch`.
 
