@@ -7,13 +7,13 @@ errors, testing, and Canvas 2D / WebGL2 drawing. For *why* it is fast, see
 ## Setup
 
 hammer is a git dependency and needs no npm packages of its own. In `deps.edn`,
-pin a release tag and the commit it points at (`git rev-parse --short v0.1.0`,
+pin a release tag and the commit it points at (`git rev-parse --short v0.1.1`,
 or the release page on GitHub):
 
 ```clojure
 io.github.sstoehrm/hammer {:git/url "git@github.com:sstoehrm/hammer.git"
-                           :git/tag "v0.1.0"
-                           :git/sha "<short sha of v0.1.0>"}
+                           :git/tag "v0.1.1"
+                           :git/sha "<short sha of v0.1.1>"}
 ```
 
 The repository is private for now, so the SSH URL needs a GitHub key with
