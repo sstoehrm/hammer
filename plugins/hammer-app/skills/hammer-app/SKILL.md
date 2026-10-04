@@ -13,26 +13,35 @@ This sheet covers hammer's whole public API (`defc`, `is?`, `reg-event`,
 and every DOM behaviour an
 app depends on. Everything below was checked against hammer's source and in a
 browser, so you should not need to read hammer's source.
+Other namespaces have their own page in this skill's directory, read only when
+you use them: `tracks-tubes.md` (`hammer.track`: events on db changes,
+`hammer.tubes`: events over a WebSocket), `canvas.md` (`hammer.canvas`,
+`hammer.gl`: `defdraw`, `defloop`), `testing.md` (`hammer.testing`).
 
 ## Setup
 
 - hammer is a git dependency in `deps.edn` and needs no npm packages of its
   own: `io.github.sstoehrm/hammer {:git/url "git@github.com:sstoehrm/hammer.git"
-  :git/sha "<commit>"}`.
+  :git/tag "<tag>" :git/sha "<short sha of the tag>"}`.
 - With shadow-cljs, `:deps true` in `shadow-cljs.edn` makes shadow-cljs read
   `deps.edn`, so hammer and `thheller/shadow-cljs` go there.
 - Require `hammer.core`; the build's `:init-fn` calls `mount!` once.
-- Any optimization level works, `:advanced` included.
+- Any optimization level works, `:advanced` included. Under `:advanced`, hint
+  JS objects in your own interop with `^js` (`(fn [^js file] (.-name file))`),
+  or their property names get renamed.
 
 ## Example
 
 ```clojure
 (ns app.core
-  (:require [hammer.core :refer [defc reg-event reg-fx dispatch mount!]]))
+  (:require [hammer.core :refer [defc reg-event reg-fx dispatch mount!]]
+            [hammer.http]))                ; registers the :http effect
 
+(reg-event :load (fn [_] {:http {:uri "/api/todos" :on-success [:loaded]}}))
+(reg-event :loaded (fn [db todos] {:db (assoc db :todos (vec todos))}))
 (reg-event :add (fn [db title] {:db (update db :todos conj {:title title})}))
 
-(defc todo-row [i]                        ; props
+(defc todo-row [i]                        ; props: plain symbols
   [todo [:todos i]                        ; vector literal = db path
    open (atom false)                      ; atom = local state, created once
    cls  (when (:done todo) "line-through")] ; anything else = derived
@@ -42,7 +51,8 @@ browser, so you should not need to read hammer's source.
   [:ul (for [i (range (count todos))] ^{:key i} [todo-row i])])
 
 (defn init []
-  (mount! [page] (js/document.getElementById "app") {:todos []}))
+  (mount! [page] (js/document.getElementById "app") {:todos []})
+  (dispatch [:load]))
 ```
 
 ## Components: `(defc name [props] [bindings] body)`
@@ -54,6 +64,11 @@ browser, so you should not need to read hammer's source.
 | `(atom x)` | local state; the init runs once per instance, later prop changes are ignored |
 | anything else | derived from the props and earlier bindings it names |
 
+- Props and binding names must be plain symbols: no destructuring.
+  `(defc bar [{:keys [label total]}] [] …)` fails to compile with "props and
+  binding names must be plain symbols". Take the map and derive:
+  `(defc bar [row] [label (:label row) total (:total row)] …)`. Destructuring
+  inside the body (`let`, `fn` args) is fine.
 - `(vector a b)` is a value; `[a b]` is always a path.
 - The body re-renders only when a binding it names changes, or when a global
   atom it derefs directly changes: `[:span (count @cart)]` and
@@ -87,57 +102,36 @@ browser, so you should not need to read hammer's source.
 - `(dispatch [:id & args])` queues an event (microtask) and works from
   anywhere: handlers, promise callbacks, `js/window` listeners, timers.
   `dispatch-sync` runs it and renders now, and throws inside a handler.
-- HTTP: `(:require [hammer.http])` registers the `:http` effect (fetch-based):
+## HTTP: the `:http` effect
+
+`(:require [hammer.http])` registers the `:http` effect (fetch-based). Use it
+for every request, uploads included, instead of a `reg-fx` around `js/fetch`:
 
 ```clojure
-(reg-event :load (fn [_ q] {:http {:uri "/api/items" :params {:q q}      ; GET, params → query
-                                   :on-success [:loaded] :on-failure [:failed]}}))
-(reg-event :loaded (fn [db items] {:db (assoc db :items items)}))        ; JSON, keywordized
-(reg-event :save (fn [db] {:http {:method :post :uri "/api/items" :body (:draft db)
-                                  :on-success [:saved]}}))               ; clj body → JSON
+(reg-event :search (fn [_ q] {:http {:uri "/api/items" :params {:q q}   ; GET, params → query
+                                     :on-success [:loaded] :on-failure [:failed]}}))
+(reg-event :save (fn [db] {:http {:method :post :uri "/api/items" :body (:draft db) ; clj → JSON
+                                  :on-success [:saved] :on-failure [:failed]}}))
+(reg-event :upload (fn [_ file] {:http {:method :post :uri "/api/import" :body file ; File as is
+                                        :headers {"Content-Type" "text/csv"}
+                                        :on-success [:imported] :on-failure [:failed]}}))
+(reg-event :failed (fn [db {:keys [status response]}] {:db (assoc db :error response)}))
 ```
 
-  Keys: `:method :uri :params :body :headers :timeout`, `:response-format`
-  (`:json` default, `:text`, `:blob`, `:raw`), `:keywords?` (true),
-  `:abort-key` (a newer request with the same key cancels the older one,
-  silently), `:fetch-options` (passed to fetch: `:credentials` …). A vector of
-  maps runs each. `:on-failure` gets `{:uri :status :status-text :failure
-  :response}`, `:failure` one of `:error` (non-2xx) `:network` `:timeout`
-  `:parse`; without `:on-failure` the failure is reported (and fails tests).
-  In tests, stub with `(hammer.http/set-fetch! (fn [url init] promise))`.
-
-## Tracks: events on db changes
-
-`(:require [hammer.track])`, then dispatch an event whenever the values at
-db paths change, without a component (the re-frame "track" pattern):
-
-```clojure
-{:hammer.track/register {:id :reload :path [:filters]               ; or :paths [[:a] [:b]]
-                         :event-fn (fn [filters] [:load filters])}} ; nil = no event
-{:hammer.track/dispose {:id :reload}}
-```
-
-`:dispatch-first?` (default true) also fires for the current values. A change
-is "not `=`", batched per tick; only tracks whose paths changed run.
-Registering an id again replaces it. Don't let a track's event change its own
-path (it loops). `reset-app!` disposes all.
-
-## Tubes: events to and from a server
-
-`(:require [hammer.tubes])`: event vectors over a WebSocket as EDN, both ways.
-
-```clojure
-{:hammer.tubes/create {:url "ws://host/ws" :params {:token t}
-                       :on-connect [:online] :on-disconnect [:offline]}}
-{:hammer.tubes/send [:say-hello "x"]}     ; queued while disconnected
-{:hammer.tubes/destroy {}}                ; for good, no reconnect
-```
-
-Every event the server sends is dispatched (`:on-receive (fn [ev])` replaces
-that). Reconnects with backoff. `:id` for several tubes (default `:default`).
-The server must send and receive one EDN event vector per text frame. Tests:
-`hammer.tubes/set-websocket!` swaps in a fake socket. Costs ~14 KB gzip (EDN
-reader) when required.
+- `:body`: a map, vector, seq or set is sent as JSON (`Content-Type` set for
+  you); a string, `js/File` or `js/Blob` is sent as is, with the `:headers`
+  you give. A GET with a `:body` is rejected: use `:params`.
+- The response is appended to the `:on-success` event, JSON keywordized
+  (`:keywords? false` keeps string keys); a 204 or empty body gives `nil`.
+- `:on-failure` gets `{:uri :status :status-text :failure :response}`:
+  `:failure` is `:error` for non-2xx, with the parsed error body in
+  `:response`, or `:network`, `:timeout`, `:parse`. Without `:on-failure` the
+  failure is reported (and fails tests).
+- Other keys: `:timeout`, `:response-format` (`:json` default, `:text`,
+  `:blob`, `:raw`), `:abort-key` (a newer request with the same key cancels
+  the older one, silently), `:fetch-options` (passed to fetch: `:credentials`
+  …). A vector of request maps runs each.
+- In tests, stub with `(hammer.http/set-fetch! (fn [url init] promise))`.
 
 ## Hiccup and DOM attributes
 
@@ -175,7 +169,8 @@ reader) when required.
 - `[:option {:value "a"} "a"]` always writes `value="a"`; `{:value nil}` writes
   `value=""` (a "none" placeholder option).
 - Form submit: `[:form {:on-submit #(do (.preventDefault %) (dispatch [:save]))} …]`.
-- File input: `:on-change #(-> (.. % -target -files) (aget 0) (.text) (.then (fn [t] (dispatch [:csv t]))))`.
+- File input: `:on-change #(dispatch [:upload (aget (.. % -target -files) 0)])`, then
+  send the file with `:http` (above), or read it with `(.text file)`.
 
 ## Event handlers (`:on-<event>`)
 
@@ -224,55 +219,6 @@ builds).
 content); `(mount! hiccup el)` keeps the current db. Call it once: later db
 changes re-render the affected components by themselves.
 
-## Canvas and WebGL2: `defdraw`, `defloop`
-
-`hammer.canvas` (Canvas 2D) and `hammer.gl` (WebGL2) define draw components with
-the same props and bindings as `defc`, but returning a draw fn instead of
-hiccup. `defdraw` redraws at the next animation frame when a binding its opts or
-draw fn names changes; `defloop` also redraws every frame while `:run?` is
-truthy. hammer never clears the canvas: clear it yourself.
-
-```clojure
-(require '[hammer.canvas :refer [defdraw defloop]])
-
-(defdraw chart [] [pts [:points] sel [:selected]]
-  {:size [800 400] :on-click [:pick]}                 ; dispatches [:pick x y]
-  (fn [ctx {:keys [w h]}]
-    (.clearRect ctx 0 0 w h)
-    (doseq [[id {:keys [x y]}] pts]
-      (set! (.-fillStyle ctx) (if (= id sel) "red" "gray"))
-      (.fillRect ctx x y 4 4))))
-
-(defloop balls [] [world (volatile! (init-world 200)) paused? [:paused?]]
-  {:run? (not paused?)}
-  (fn [ctx {:keys [w h dt]}] (vswap! world step dt) (render ctx w h @world)))
-
-(defc page [] [] [:div [chart] [balls]])              ; embed like any component
-```
-
-- Draw fn: `(fn [ctx info])`, or `(fn [ctx info res])` with `:init`. `ctx` is
-  the 2D context scaled by `devicePixelRatio` (draw in CSS pixels); with
-  `hammer.gl` it is the `WebGL2RenderingContext`, viewport already set. `info`
-  is `{:w :h :dpr}`, plus `{:t :dt :n}` for `defloop` (ms since start, capped
-  delta, frame count).
-- Opts (a literal map, may use bindings): `:size [w h]` (absent: fills its CSS
-  box, so give the container a height), `:run?` and `:max-dt` (100) for
-  `defloop`, `:init (fn [ctx info] res)` / `:dispose (fn [res])`, `:attrs` for
-  the `<canvas>`, and `:on-*` canvas events: a fn gets `(e {:x :y})`
-  canvas-local, an event vector is dispatched with `x y` appended.
-  `hammer.gl` only: `:context-attrs`, `:fallback` (static hiccup shown without
-  WebGL2), `:on-unsupported (fn [reason])`.
-- Per-frame mutable state goes in a `volatile!` binding (as `world` above): an
-  atom binding is watched and re-evaluates opts and draw fn on every change.
-- A global atom deref'd **inside the draw fn** is not tracked (it is a fn):
-  bind it (`[c cart]`) or read it through a db path, or a `defdraw` never
-  redraws. A deref in the opts map is tracked.
-- Standalone, without `hammer.core` in the bundle: `(hammer.canvas/mount! [chart]
-  el db)` (or `hammer.gl/mount!`), where `el` is a `<canvas>` or a container.
-  Both namespaces also export `reg-event`, `dispatch`, `on-error!`, etc.
-- `hammer.gl`: each component owns a WebGL2 context, and browsers keep about 16
-  per page; keep live `hammer.gl` components well under that.
-
 ## Where mistakes show up
 
 hammer never throws for a failing handler, fx or render, or for a mistake like
@@ -293,35 +239,4 @@ a reg-fx?", "handler must return an effect map", "event must be a vector",
 "update failed in <component>", ":ref failed", "duplicate keys", "some list items
 have no key", and in dev builds ":on-click must be an event vector or a fn, got
 :save". Check the console first when the UI does not react; in tests,
-hammer.testing makes them fail the test (below).
-
-## Testing
-
-`hammer.testing` (node or browser tests, e.g. shadow-cljs `:node-test` with jsdom):
-
-- `(t/reset-app!)` as a `:before` fixture: unmounts every root, empties the db.
-- `(t/flush!)` runs queued events and renders synchronously, then **throws** if
-  hammer reported an error since the last check (`ex-data` has `:errors`).
-  `dispatch-sync` alone never throws for a report: end such tests with
-  `(t/check-errors!)`, or use it as an `:after` fixture.
-- `(t/expect-errors f)` runs `f` and returns the reports
-  (`[{:level :message :error}]`) instead of failing; for testing error paths.
-- `(t/renders comp)` / `(t/reset-renders! comp)`: render counts, to check that
-  only the expected components re-rendered.
-- Draw components: `(t/use-fake-frames!)` in the `:before` fixture, then
-  `(t/frame! ms)` flushes and draws one frame at time `ms` (and throws like
-  `flush!`). Node has no canvas: stub `getContext` on the element.
-- Handlers and fxs are global and `reset-app!` keeps them: in tests that
-  register their own, use namespaced ids (`::add`) so test namespaces can't
-  overwrite each other's.
-
-```clojure
-;; (:require [cljs.test :refer [deftest is use-fixtures]] [hammer.testing :as t] …)
-(use-fixtures :each {:before t/reset-app!})
-(deftest add-todo
-  (let [el (js/document.createElement "div")]
-    (mount! [page] el {:todos []})
-    (dispatch [:add "milk"])
-    (t/flush!)
-    (is (= "milk" (.-textContent (.querySelector el "li"))))))
-```
+hammer.testing makes them fail the test (`testing.md`).
