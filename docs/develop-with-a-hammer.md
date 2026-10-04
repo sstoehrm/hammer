@@ -82,7 +82,8 @@ the strings `"true"`/`"false"`; anything else is written with `str`.
 `:backgroundColor`) or a CSS string. SVG works: `[:svg {:viewBox "0 0 10 10"} [:circle {:r 5}]]`
 creates SVG elements from `:svg` down (a `foreignObject`'s children are HTML
 again), in components and on every update. Attribute names keep their case
-(`:viewBox`).
+(`:viewBox`). Use `:href`, not `:xlink:href`. A canvas component inside an
+`:svg` needs a `:foreignObject` around it.
 
 Errors: hammer does not throw for a failing handler, fx, render or draw, or for
 a mistake like a missing handler or a handler that returns `db` instead of

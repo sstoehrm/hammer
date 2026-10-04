@@ -214,7 +214,7 @@
   "The namespace of elements created as children of el: SVG inside an SVG
   element other than foreignObject, else nil (HTML)."
   [^js el]
-  (when (and (= svg-ns (.-namespaceURI el)) (not= "foreignObject" (.-localName el)))
+  (when (and (identical? svg-ns (.-namespaceURI el)) (not (identical? "foreignObject" (.-localName el))))
     svg-ns))
 
 (defn- insert-from!
@@ -391,9 +391,10 @@
             (set! (.-el v) n)
             n)
     :el (let [tag (.-tag v)
-              ns (if (= tag "svg") svg-ns ns)
+              ;; identical? is === on strings; = would go through cljs.core/=
+              ns (if (identical? tag "svg") svg-ns ns)
               el (if ns (.createElementNS js/document ns tag) (.createElement js/document tag))
-              kns (when-not (= tag "foreignObject") ns)
+              kns (when (and ns (not (identical? tag "foreignObject"))) ns)
               attrs (.-attrs v)]
           (.forEach (.-kids v) (fn [k] (.appendChild el (create! k depth kns))))
           (set-attrs! el nil attrs)

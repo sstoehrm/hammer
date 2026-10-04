@@ -119,7 +119,9 @@ browser, so you should not need to read hammer's source.
   the next render is removed.
 - SVG: `[:svg {:viewBox "0 0 10 10"} [:circle {:r 5}]]` creates SVG elements
   from `:svg` down, `foreignObject` content is HTML again; a component whose
-  root is `[:circle]` works inside an `:svg`. Attribute names keep their case.
+  root is `[:circle]` works inside an `:svg`. Attribute names keep their case;
+  use `:href`, not `:xlink:href`. A canvas component inside an `:svg` needs a
+  `:foreignObject` around it.
 - `:ref` gets the element after insertion and `nil` on removal:
   `:ref #(some-> % .focus)`.
 

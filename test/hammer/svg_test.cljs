@@ -75,3 +75,39 @@
     (dom/mount! [swap-root] el)
     (events/dispatch-sync [::set :s? true])
     (is (= svg-ns (ns-of el "#sv circle")))))
+
+;; ---- the update paths the first tests don't reach (review)
+
+(defc rings [] [ids [:ids]] [:svg (for [id ids] ^{:key id} [:circle {:id (str "k" id)}])])
+
+(deftest keyed-middle-creates-are-svg
+  (reset! state/app-db {:ids [3 4]})
+  (let [el (container)]
+    (dom/mount! [rings] el)
+    (events/dispatch-sync [::set :ids [4 5 3]])
+    (is (= svg-ns (ns-of el "#k5")) "created in the keyed diff's middle")
+    (events/dispatch-sync [::set :ids [6 7 8 9]])
+    (is (= [svg-ns] (distinct (mapv #(.-namespaceURI %) (.querySelectorAll el "circle")))) "full rebuild")))
+
+(defc mixed [] [x [:x]] [:svg [:title "t"] x [:g#after]])
+
+(deftest kid-hole-switching-text-and-hiccup-inside-svg
+  (reset! state/app-db {:x "text"})
+  (let [el (container)]
+    (dom/mount! [mixed] el)
+    (events/dispatch-sync [::set :x [:rect#r]])
+    (is (= svg-ns (ns-of el "#r")))
+    (events/dispatch-sync [::set :x "again"])
+    (events/dispatch-sync [::set :x (list [:line#l1] [:line#l2])])
+    (is (= [svg-ns svg-ns] [(ns-of el "#l1") (ns-of el "#l2")]))))
+
+(defc fo [] [x [:x]] [:svg [:foreignObject x]])
+
+(deftest foreign-object-sole-kid-and-replace-stay-html
+  (reset! state/app-db {:x [:p#p "a"]})
+  (let [el (container)]
+    (dom/mount! [fo] el)
+    (is (= svg-ns (ns-of el "foreignObject")))
+    (is (= html-ns (ns-of el "#p")))
+    (events/dispatch-sync [::set :x [:div#d [:span#s "b"]]])
+    (is (= [html-ns html-ns] [(ns-of el "#d") (ns-of el "#s")]))))
