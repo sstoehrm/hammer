@@ -1,6 +1,6 @@
 {
   "name": "hammer-app",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Write web app UIs with the hammer ClojureScript library",
   "author": {
     "name": "Sören Stöhrmann",
