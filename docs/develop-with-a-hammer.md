@@ -64,7 +64,8 @@ and each re-renders by diffing only its own hiccup.
 | `(mount! hiccup el)` | render into `el`, keeping the current db |
 | `(on-error! (fn [{:keys [level message error]}]))` | replaces the console as the place hammer reports to; `nil` restores it |
 
-Hiccup: `:on-<dom-event>` takes an event vector or fn; `:ref` fn gets the element,
+Hiccup: `:on-<dom-event>` takes an event vector or fn (anything else is ignored,
+with a warning in dev builds); `:ref` fn gets the element,
 and `nil` on removal, so write it as `#(some-> % .focus)` rather than assuming a
 non-nil element. Handlers run from one capture-phase listener per event type on
 the `mount!` container, so `(.-currentTarget e)` is that container; a fn

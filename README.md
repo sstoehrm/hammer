@@ -58,7 +58,7 @@ No clue. Use with caution.
   render yet.
 - [x] Canvas components' `:attrs` follow the DOM attribute rules (booleans,
   `aria-*`).
-- [ ] Warn when an `:on-*` handler is a keyword, set or map (ignored today).
+- [x] Warn when an `:on-*` handler is a keyword, set or map (dev builds).
 - [ ] Track global atoms deref'd in helper functions, not only in the component.
 - [ ] 3D on top of `hammer.gl`: meshes, cameras, materials, a scene graph.
 

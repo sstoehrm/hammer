@@ -121,6 +121,7 @@
   "Stores handler v for event type t on el; registers t for delegation when
   reg? (the element had no handler for t before)."
   [^js el t v reg?]
+  (log/check-handler! (str ":on-" t) v)
   (let [hs (or (.-__cuiH el) (let [o #js {}] (set! (.-__cuiH el) o) o))]
     (when reg? (.add new-types t))
     (gobj/set hs t v)))

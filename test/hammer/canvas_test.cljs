@@ -525,3 +525,9 @@
       (t/frame! 16)
       (is (= {"hidden" "" "aria-hidden" "true" "draggable" "false" "data-n" "1"}
              (dissoc (attrs) "id" "style" "width" "height" "class"))))))
+
+(defdraw keyword-click [] [] {:size [10 10] :on-click :pick :on-pointermove [:ok]} (fn [_ _]))
+
+(deftest canvas-non-fn-non-vector-handlers-warn
+  (let [warns (t/expect-errors #(do (cv/mount! [keyword-click] (div)) (t/frame! 0)))]
+    (is (= ["hammer: :on-click must be an event vector or a fn, got :pick"] (mapv :message warns)))))

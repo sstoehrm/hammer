@@ -247,7 +247,8 @@ returned no known effect keys (…) - did it return db instead of {:db db}, or m
 a reg-fx?", "handler must return an effect map", "event must be a vector",
 "event handler failed [:x …]", "fx failed :k", "render failed in <component>",
 "update failed in <component>", ":ref failed", "duplicate keys", "some list items
-have no key". Check the console first when the UI does not react; in tests,
+have no key", and in dev builds ":on-click must be an event vector or a fn, got
+:save". Check the console first when the UI does not react; in tests,
 hammer.testing makes them fail the test (below).
 
 ## Testing
