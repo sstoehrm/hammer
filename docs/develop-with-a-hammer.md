@@ -414,7 +414,6 @@ as a `:local/root` dep (`cd examples/counter && clj -M:dev` → http://localhost
 | `npm test` | the test suite (shadow-cljs `:node-test`, jsdom) |
 | `bb loc` | non-blank, non-comment lines in `src/hammer` |
 | `bb sizes` | builds the dom/canvas/gl size apps, prints raw and gzip sizes, fails if a bundle carries another variant's namespaces |
-| `bb tokens` | TodoMVC token count, hammer vs re-frame |
 | `bb bench-canvas` | the canvas benchmark ([bench/canvas](../bench/canvas/README.md)) |
 
 CI (`.github/workflows/ci.yml`) runs the tests, `bb sizes`, the release builds

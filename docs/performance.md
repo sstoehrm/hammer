@@ -107,7 +107,6 @@ Other measurements:
 - **Canvas:** [bench/canvas/RESULTS.md](../bench/canvas/RESULTS.md) compares
   hammer's `defdraw`/`defloop` with hand-written JS issuing the same draw
   calls.
-- **Tokens:** hammer's TodoMVC is 1,246 tokens against re-frame's 2,637, 52.7%
-  fewer (`bb tokens`). [stack-cap-bench](https://github.com/sstoehrm/stack-cap-bench)
+- **Tokens:** [stack-cap-bench](https://github.com/sstoehrm/stack-cap-bench)
   measures what a coding agent spends building the same projects in different
   stacks, hammer with its skill among them.
