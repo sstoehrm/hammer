@@ -30,6 +30,7 @@
 (events/reg-event ::go (fn [_ req] {:http req}))
 (events/reg-event ::ok (fn [db & args] {:db (assoc db :ok (vec args))}))
 (events/reg-event ::bad (fn [db & args] {:db (assoc db :bad (vec args))}))
+(events/reg-event ::oks (fn [db body] {:db (update db :oks (fnil conj []) body)}))
 
 (defn- settle
   "Calls f after pending promise callbacks and the event queue have run."
@@ -131,14 +132,15 @@
                (js/Promise. (fn [resolve reject]
                               (.addEventListener (.-signal init) "abort" #(reject (js/Error. "aborted")))
                               (swap! resolvers conj #(resolve (response 200 (str "\"" url "\""))))))))
-      (events/dispatch [::go {:uri "/q1" :abort-key :search :on-success [::ok] :on-failure [::bad]}])
+      (events/dispatch [::go {:uri "/q1" :abort-key :search :on-success [::oks] :on-failure [::bad]}])
       (t/flush!)
-      (events/dispatch [::go {:uri "/q2" :abort-key :search :on-success [::ok] :on-failure [::bad]}])
+      ;; a key built at runtime is a different object than the literal :search
+      (events/dispatch [::go {:uri "/q2" :abort-key (keyword "search") :on-success [::oks] :on-failure [::bad]}])
       (t/flush!)
       (doseq [r @resolvers] (r))
       (settle
        (fn []
-         (is (= ["/q2"] (:ok @state/app-db)) "only the latest request answers")
+         (is (= ["/q2"] (:oks @state/app-db)) "only the latest request answers")
          (is (nil? (:bad @state/app-db)) "the superseded one does not fail")
          (done))))))
 

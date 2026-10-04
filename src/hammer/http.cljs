@@ -16,8 +16,9 @@
 
 (defonce ^:private fetch-fn (volatile! nil))
 
-;; abort-key → #js {:ctl AbortController :why nil|"superseded"|"timeout"}
-(defonce ^:private in-flight (js/Map.))
+;; abort-key → #js {:ctl AbortController :why nil|"superseded"|"timeout"}, by
+;; value: a key built at runtime is = to a literal one but not identical
+(defonce ^:private in-flight (volatile! {}))
 
 (defn set-fetch!
   "Replaces js/fetch for :http requests with (fn [url init] promise-of-Response),
@@ -89,8 +90,8 @@
                 (js/setTimeout #(do (set! (.-why st) "timeout") (.abort ctl)) timeout))
         done! (fn []
                 (when timer (js/clearTimeout timer))
-                (when (and abort-key (identical? st (.get in-flight abort-key)))
-                  (.delete in-flight abort-key)))
+                (when (and abort-key (identical? st (get @in-flight abort-key)))
+                  (vswap! in-flight dissoc abort-key)))
         fail! (fn [m]
                 (done!)
                 (let [m (merge {:uri uri :status 0 :status-text ""} m)]
@@ -102,10 +103,10 @@
                                                (name (:failure m))))
                                  nil))))]
     (when abort-key
-      (when-let [^js prev (.get in-flight abort-key)]
+      (when-let [^js prev (get @in-flight abort-key)]
         (set! (.-why prev) "superseded")
         (.abort (.-ctl prev)))
-      (.set in-flight abort-key st))
+      (vswap! in-flight assoc abort-key st))
     (-> (fetch* (with-params uri params) (init req method (.-signal ctl)))
         (.then
          (fn [^js res]
