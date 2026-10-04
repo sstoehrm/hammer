@@ -24,7 +24,10 @@ you use them: `tracks-tubes.md` (`hammer.track`: events on db changes,
   own: `io.github.sstoehrm/hammer {:git/url "git@github.com:sstoehrm/hammer.git"
   :git/tag "<tag>" :git/sha "<short sha of the tag>"}`.
 - With shadow-cljs, `:deps true` in `shadow-cljs.edn` makes shadow-cljs read
-  `deps.edn`, so hammer and `thheller/shadow-cljs` go there.
+  `deps.edn`, so hammer and `thheller/shadow-cljs` go there. Don't add
+  `org.clojure/clojurescript`: shadow-cljs brings the version it needs, and a
+  pin overrides it: shadow-cljs 3.5.4 needs 1.12.145, and with a 1.12.42 pin
+  the build fails with "No such var: ana/elide-to-string?".
 - Require `hammer.core`; the build's `:init-fn` calls `mount!` once.
 - Any optimization level works, `:advanced` included. Under `:advanced`, hint
   JS objects in your own interop with `^js` (`(fn [^js file] (.-name file))`),
