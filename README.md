@@ -20,7 +20,8 @@ in [docs/performance.md](docs/performance.md).
 ## Features
 
 - re-frame-style events and effects: `reg-event`, `reg-fx`, `dispatch`, effect
-  maps, without React and without subscriptions.
+  maps, without React and without subscriptions, and a built-in `:http` effect
+  (`hammer.http`, fetch-based, no dependencies).
 - Components name the app-db paths they read. A path trie re-renders exactly the
   components whose paths changed, and each one diffs only its own hiccup.
 - `is?` bindings for selections: only the rows whose result flips re-render.
@@ -53,7 +54,7 @@ No clue. Use with caution.
 - [ ] First release: tag `v0.1.0` (GitHub release with the jar; use it via the
   git tag).
 - [ ] Publish on Clojars once the git releases are verified.
-- [ ] A built-in HTTP effect (`fetch`-based `:http`), so apps don't each write one.
+- [x] A built-in HTTP effect (`fetch`-based `:http`), so apps don't each write one.
 - [x] SVG: elements below `:svg` are created in the SVG namespace.
 - [x] Canvas components' `:attrs` follow the DOM attribute rules (booleans,
   `aria-*`).

@@ -87,18 +87,24 @@ browser, so you should not need to read hammer's source.
 - `(dispatch [:id & args])` queues an event (microtask) and works from
   anywhere: handlers, promise callbacks, `js/window` listeners, timers.
   `dispatch-sync` runs it and renders now, and throws inside a handler.
-- HTTP pattern:
+- HTTP: `(:require [hammer.http])` registers the `:http` effect (fetch-based):
 
 ```clojure
-(reg-fx :http (fn [{:keys [method url body on-ok]}]
-  (-> (js/fetch url (clj->js (cond-> {:method (or method "GET")}
-                               body (assoc :headers {"Content-Type" "application/json"}
-                                           :body (js/JSON.stringify (clj->js body))))))
-      (.then #(.json %))
-      (.then #(dispatch (conj on-ok (js->clj % :keywordize-keys true)))))))
-(reg-event :load (fn [_] {:http {:url "/api/items" :on-ok [:loaded]}}))
-(reg-event :loaded (fn [db items] {:db (assoc db :items items)}))
+(reg-event :load (fn [_ q] {:http {:uri "/api/items" :params {:q q}      ; GET, params → query
+                                   :on-success [:loaded] :on-failure [:failed]}}))
+(reg-event :loaded (fn [db items] {:db (assoc db :items items)}))        ; JSON, keywordized
+(reg-event :save (fn [db] {:http {:method :post :uri "/api/items" :body (:draft db)
+                                  :on-success [:saved]}}))               ; clj body → JSON
 ```
+
+  Keys: `:method :uri :params :body :headers :timeout`, `:response-format`
+  (`:json` default, `:text`, `:blob`, `:raw`), `:keywords?` (true),
+  `:abort-key` (a newer request with the same key cancels the older one,
+  silently), `:fetch-options` (passed to fetch: `:credentials` …). A vector of
+  maps runs each. `:on-failure` gets `{:uri :status :status-text :failure
+  :response}`, `:failure` one of `:error` (non-2xx) `:network` `:timeout`
+  `:parse`; without `:on-failure` the failure is reported (and fails tests).
+  In tests, stub with `(hammer.http/set-fetch! (fn [url init] promise))`.
 
 ## Hiccup and DOM attributes
 

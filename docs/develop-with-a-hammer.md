@@ -135,6 +135,42 @@ The 2-arity `mount!` renders without touching `app-db`; call it from a
 `^:dev/after-load` hook so a hot reload re-renders with whatever db state the
 running app already has, instead of resetting it.
 
+## HTTP
+
+`(:require [hammer.http])` registers the `:http` effect, built on `fetch`. Key
+names follow re-frame's http-fx where they mean the same; it has no
+dependencies, and apps that don't require it pay nothing (it adds about 2.8 KB
+gzip when used).
+
+```clojure
+(reg-event :load (fn [_ q] {:http {:uri "/api/items" :params {:q q}
+                                   :abort-key :search
+                                   :on-success [:loaded] :on-failure [:failed]}}))
+(reg-event :loaded (fn [db items] {:db (assoc db :items items)}))
+(reg-event :save (fn [db] {:http {:method :post :uri "/api/items" :body (:draft db)
+                                  :headers {"Authorization" (str "Bearer " (:token db))}
+                                  :on-success [:saved]}}))
+```
+
+| Key | Default | |
+|---|---|---|
+| `:method` | `:get` | any HTTP method |
+| `:uri` | required | |
+| `:params` | — | appended as a query string; a sequential value repeats the key, `nil` is skipped |
+| `:body` | — | clj data is sent as JSON with `Content-Type: application/json`; a string, `FormData`, `Blob`, … as is |
+| `:headers` | — | map of header → value |
+| `:timeout` | none | ms; fails with `:failure :timeout` |
+| `:abort-key` | — | a newer request with the same key aborts the older one, which then dispatches nothing |
+| `:response-format` | `:json` | `:json`, `:text`, `:blob`, or `:raw` (the `Response`) |
+| `:keywords?` | `true` | keywordize JSON keys |
+| `:fetch-options` | — | merged into fetch's init: `:credentials`, `:mode`, `:cache`, … |
+| `:on-success` | — | event vector; the body is appended (`nil` for an empty body) |
+| `:on-failure` | — | event vector; `{:uri :status :status-text :failure :response}` is appended. `:failure` is `:error` (non-2xx, `:response` is the parsed body), `:network`, `:timeout` or `:parse`. Without it, the failure is reported through `on-error!` and fails `flush!` in tests. |
+
+A vector of request maps runs each. To add auth to every request, or to stub
+requests in tests, replace fetch: `(hammer.http/set-fetch! (fn [url init]
+promise-of-Response))`; `nil` restores `js/fetch`.
+
 ## Testing
 
 `hammer.testing` provides:
