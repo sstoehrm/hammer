@@ -1,6 +1,25 @@
-<img src="assets/hammer.svg" alt="" width="96" height="96">
+<p align="center">
+  <img src="assets/hammer.svg" alt="hammer" width="160" height="160">
+</p>
 
-# hammer
+<h1 align="center">hammer</h1>
+
+<p align="center">
+  A fast ClojureScript UI library: re-frame-style events, components that name
+  the db paths they read, SVG, Canvas&nbsp;2D and WebGL2.
+</p>
+
+<p align="center">
+  <a href="docs/develop-with-a-hammer.md">Develop with a hammer</a>
+  &nbsp;·&nbsp;
+  <a href="docs/performance.md">Performance</a>
+  &nbsp;·&nbsp;
+  <a href="#features">Features</a>
+  &nbsp;·&nbsp;
+  <a href="#todo">TODO</a>
+</p>
+
+---
 
 If all you have is a hammer, everything looks like a nail. This hammer is a
 ClojureScript frontend library, so every problem looks like a web page, which
