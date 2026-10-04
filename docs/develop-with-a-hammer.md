@@ -206,6 +206,65 @@ a draft. `(:require [hammer.track])` registers two effects:
   next.
 - `hammer.testing/reset-app!` disposes every track.
 
+## Tubes
+
+Tubes send event vectors between the app and a server over a WebSocket, both
+ways: throw `[:say-hello "x"]` at the server, and let the server push events
+back. Inspired by [pneumatic-tubes](https://github.com/drapanjanas/pneumatic-tubes);
+this is the client side only, with its own small protocol, so any server that
+speaks it works. `(:require [hammer.tubes])` registers three effects:
+
+```clojure
+(reg-event :init (fn [_] {:hammer.tubes/create {:url "ws://localhost:9090/ws"
+                                                :params {:token "abc"}       ; → ?token=abc
+                                                :on-connect [:online]        ; event vector or fn
+                                                :on-disconnect [:offline]}}))
+(reg-event :say-hello (fn [db name] {:db (assoc db :greeting name)
+                                     :hammer.tubes/send [:say-hello name]})) ; to the server
+(reg-event :say-hello-processed (fn [db] ...))                               ; pushed by the server
+(reg-event :logout (fn [_] {:hammer.tubes/destroy {}}))
+```
+
+- **Protocol:** one text frame per event, the event vector as EDN (`pr-str`
+  out, the EDN reader in, nothing is evaluated). Send data that prints as EDN.
+- **Incoming:** every event from the server is dispatched; `:on-receive (fn
+  [event])` replaces that, e.g. to accept only some events.
+- **Outgoing:** `:hammer.tubes/send` takes an event vector, or `{:id :event}`.
+  While disconnected, events are queued and go out in order on the next connect.
+- **Reconnect:** a dropped connection reconnects after a random backoff whose
+  maximum grows by 1 s per attempt up to 30 s (`:backoff (fn [attempt] ms)`
+  replaces it), reset after a successful connect. `:hammer.tubes/destroy` closes
+  for good, without `:on-disconnect`.
+- **Several tubes:** `:id` on each effect (default `:default`); creating an id
+  again replaces that tube.
+- **Errors:** unreadable or non-event frames, a send to no tube and a missing
+  `:url` are reported through `on-error!`.
+- **Testing:** `(hammer.tubes/set-websocket! (fn [url] fake-socket))` swaps in a
+  fake WebSocket; `reset-app!` destroys every tube.
+- **Size:** about 14 KB gzip in apps that require it, nearly all of it the EDN
+  reader; nothing otherwise.
+
+A matching server, here with http-kit (not shipped with hammer):
+
+```clojure
+(require '[org.httpkit.server :as http] '[clojure.edn :as edn])
+
+(defonce clients (atom #{}))
+
+(defn ws-handler [req]
+  (http/as-channel req
+    {:on-open    (fn [ch] (swap! clients conj ch))
+     :on-close   (fn [ch _] (swap! clients disj ch))
+     :on-receive (fn [ch msg]
+                   (let [[id & args] (edn/read-string msg)]
+                     (case id
+                       :say-hello (http/send! ch (pr-str [:say-hello-processed (first args)]))
+                       nil)))}))
+
+(defn push-all! [event]                 ; dispatch on every connected client
+  (doseq [ch @clients] (http/send! ch (pr-str event))))
+```
+
 ## Testing
 
 `hammer.testing` provides:

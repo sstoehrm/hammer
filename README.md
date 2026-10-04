@@ -27,6 +27,8 @@ in [docs/performance.md](docs/performance.md).
 - `is?` bindings for selections: only the rows whose result flips re-render.
 - Tracks (`hammer.track`): dispatch an event when db paths change, without a
   component, through the same path trie.
+- Tubes (`hammer.tubes`): event vectors to and from a server over a WebSocket,
+  as EDN, with queueing and reconnect.
 - Local state (`atom` bindings), derived bindings that recompute only when what
   they use changes, and global atoms deref'd in a component tracked
   automatically.
@@ -66,4 +68,6 @@ No clue. Use with caution.
 
 ## Special thanks
 
-To [re-frame](https://github.com/day8/re-frame) for the API inspiration.
+To [re-frame](https://github.com/day8/re-frame) for the API inspiration, and to
+Artūr Girenko for [pneumatic-tubes](https://github.com/drapanjanas/pneumatic-tubes),
+the idea behind `hammer.tubes`.
