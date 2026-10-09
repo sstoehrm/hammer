@@ -80,6 +80,10 @@ you use them: `tracks-tubes.md` (`hammer.track`: events on db changes,
   inside any `fn`/`#(…)` (including `(map (fn [x] … @cart) xs)`) or inside a
   helper function, `(deref (f))`, and vars defined after the component.
   `@^:once config` reads without tracking.
+- Binding names count wherever they appear in an init or the body, inside
+  `fn`/`#(…)` too: `[shown (filterv #(visible? % search) cards)]` recomputes
+  when `search` or `cards` changes. Only derefs of global atoms inside fns
+  go untracked (above).
 - `@app-db` is a compile warning: read the db through path bindings
   (`[todos [:todos]]`). For per-row state like a selection, prefer
   `(is? [:selected] id)` over a global atom: every row that derefs the atom
@@ -132,8 +136,11 @@ for every request, uploads included, instead of a `reg-fx` around `js/fetch`:
   failure is reported (and fails tests).
 - Other keys: `:timeout`, `:response-format` (`:json` default, `:text`,
   `:blob`, `:raw`), `:abort-key` (a newer request with the same key cancels
-  the older one, silently), `:fetch-options` (passed to fetch: `:credentials`
-  …). A vector of request maps runs each.
+  the older one, silently), `:fetch-options` (merged into fetch's options:
+  `{:keepalive true}` lets a save finish when the page reloads or navigates
+  right after it, `{:credentials "include"}` sends cookies cross-origin; the
+  method, headers, body and abort signal come from the request map). A vector
+  of request maps runs each.
 - In tests, stub with `(hammer.http/set-fetch! (fn [url init] promise))`.
 
 ## Hiccup and DOM attributes
