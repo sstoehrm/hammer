@@ -131,6 +131,17 @@ hammer facade (`hammer.core`, `hammer.app`, `hammer.canvas`, `hammer.gl`) or
 an alias of one. Anywhere else, e.g. nested inside another expression, calling
 `is?` throws.
 
+Large data you only read, such as a layout result or a scene you hit-test
+against, can stay a plain JS value under one db key: `{:db (assoc db :scene
+js-scene)}`. hammer compares it by reference: the trie descends on `identical?`,
+and `=` on a JS object or array is `identical?` too. Replacing the reference
+re-renders every component that binds `[:scene]`; mutating the object in place
+re-renders nothing. A path can't reach a JS object's fields (`get` returns
+`nil` on one), so bind `[:scene]` and read its fields in the body or a derived
+binding. Persistent maps and vectors cost more CPU and memory than plain JS
+objects when you build and scan them, so convert only the parts you `assoc`
+into or bind paths inside.
+
 The 2-arity `mount!` renders without touching `app-db`; call it from a
 `^:dev/after-load` hook so a hot reload re-renders with whatever db state the
 running app already has, instead of resetting it.
