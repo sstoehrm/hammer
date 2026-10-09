@@ -142,6 +142,14 @@ binding. Persistent maps and vectors cost more CPU and memory than plain JS
 objects when you build and scan them, so convert only the parts you `assoc`
 into or bind paths inside.
 
+Scratch state that never reaches the db or a component, such as a recorder
+called once per canvas call or the sets built while walking a graph, should
+stay mutable: a function-local JS object or array, a `volatile!`, or
+transients. When porting plain-JS code (squint, JavaScript), check hot loops
+for an accumulator that became an atom of a persistent map with a `swap!` on
+every call, or a JS `Set` that became a persistent set: those allocate on every
+step.
+
 The 2-arity `mount!` renders without touching `app-db`; call it from a
 `^:dev/after-load` hook so a hot reload re-renders with whatever db state the
 running app already has, instead of resetting it.
