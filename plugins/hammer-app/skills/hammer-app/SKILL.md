@@ -229,6 +229,20 @@ builds).
 content); `(mount! hiccup el)` keeps the current db. Call it once: later db
 changes re-render the affected components by themselves.
 
+## Large data and hot loops
+
+- Large data you only read (a layout result, a scene to hit-test) can stay a
+  plain JS value under one db key. It is compared by reference: a new
+  reference re-renders the components that bind the key, an in-place mutation
+  re-renders nothing. A path can't reach a JS object's fields (`get` returns
+  `nil`), so bind the key and read the fields in the body or a derived
+  binding. Convert to persistent data only what you `assoc` into or bind
+  paths inside.
+- Scratch state that never reaches the db (an accumulator in a hot loop, the
+  sets built while walking a graph) stays mutable: a local JS object or
+  array, a `volatile!`, or transients, not an atom of a persistent map with a
+  `swap!` per step. When porting plain-JS code, look for exactly that.
+
 ## Where mistakes show up
 
 hammer never throws for a failing handler, fx or render, or for a mistake like
