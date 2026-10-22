@@ -1,6 +1,7 @@
 {
   "name": "hammer",
   "private": true,
+  "license": "MIT",
   "scripts": {
     "test": "shadow-cljs compile test && node target/test.js"
   },
