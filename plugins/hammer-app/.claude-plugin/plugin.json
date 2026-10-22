@@ -7,5 +7,6 @@
     "url": "https://github.com/sstoehrm"
   },
   "homepage": "https://github.com/sstoehrm/hammer",
-  "repository": "https://github.com/sstoehrm/hammer"
+  "repository": "https://github.com/sstoehrm/hammer",
+  "license": "MIT"
 }
