@@ -1,8 +1,9 @@
 (ns build
-  "Release jar for Clojars: the sources under src/ (cljs plus the clj macros)
-  and a pom. The version comes from the caller, normally the git tag."
-  (:require [clojure.tools.build.api :as b]
-            [deps-deploy.deps-deploy :as dd]))
+  "Release jar: the sources under src/ (cljs plus the clj macros) and a pom.
+  The version comes from the caller, normally the git tag. release.yml
+  deploys the jar and target/classes/META-INF/maven/io.github.sstoehrm/hammer/pom.xml
+  to Clojars with mvn deploy:deploy-file."
+  (:require [clojure.tools.build.api :as b]))
 
 (def lib 'io.github.sstoehrm/hammer)
 (def class-dir "target/classes")
@@ -38,13 +39,3 @@
     (b/jar {:class-dir class-dir :jar-file (jar-file version)})
     (println "built" (jar-file version))
     opts))
-
-(defn deploy
-  "Builds the jar and deploys it to Clojars (CLOJARS_USERNAME / CLOJARS_PASSWORD)."
-  [opts]
-  (jar opts)
-  (let [version (version! opts)]
-    (dd/deploy {:installer :remote
-                :artifact (b/resolve-path (jar-file version))
-                :pom-file (b/pom-path {:lib lib :class-dir class-dir})}))
-  opts)

@@ -464,14 +464,14 @@ jar attached.
 Apps use the tag through the git coordinate above.
 
 Clojars is optional and off: the workflow deploys `io.github.sstoehrm/hammer`
-there only when the repository secrets `CLOJARS_USERNAME` and
-`CLOJARS_PASSWORD` (a Clojars deploy token) are set. A Clojars jar is public,
-source included.
-Locally: `bb jar 0.1.0`, or `clojure -T:build deploy :version '"0.1.0"'`.
+there (with Maven's `deploy:deploy-file`) only when the repository secrets
+`CLOJARS_USERNAME` and `CLOJARS_PASSWORD` (a Clojars deploy token) are set. A
+Clojars jar is public, source included.
+Locally: `bb jar 0.1.0` builds the jar.
 
 Every dependency is pinned to an exact version: npm (`.npmrc` has
 `save-exact=true`), `deps.edn`, the GitHub Actions (by commit SHA), the runner
-and the CI toolchain (Java, Node, Clojure CLI, babashka, in the workflows'
+and the CI toolchain (Java, Node, Clojure CLI, babashka, maven-deploy-plugin, in the workflows'
 `env`). Renovate (`renovate.json`) opens update PRs weekly for npm, `deps.edn`,
 the GitHub Actions and the toolchain versions (each `env` pin carries a
 `# renovate:` comment naming its source), minor and patch grouped into one PR.
