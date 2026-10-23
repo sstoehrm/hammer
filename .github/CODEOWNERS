@@ -1,0 +1,12 @@
+# CI, release and dependency config, and the security and license files
+/.github/           @sstoehrm
+/renovate.json      @sstoehrm
+/build.clj          @sstoehrm
+/bb.edn             @sstoehrm
+/deps.edn           @sstoehrm
+/shadow-cljs.edn    @sstoehrm
+/package.json       @sstoehrm
+/package-lock.json  @sstoehrm
+/.npmrc             @sstoehrm
+/SECURITY.md        @sstoehrm
+/LICENSE            @sstoehrm
