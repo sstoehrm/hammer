@@ -1,0 +1,12 @@
+# Findings the vulnerability gate lets pass, each for a reason and until a
+# date (.github/workflows/vulns.yml). An expired entry suppresses nothing:
+# the finding fails the build again until it is fixed or the entry renewed.
+#
+# ignore:
+#   - id: CVE-2024-12345          # the CVE (or the scanner's ID, e.g. GHSA-…)
+#     reason: >-
+#       Only reachable from the bench runner, which never sees untrusted
+#       input; upstream fix tracked in #123.
+#     expires: 2026-12-31         # YYYY-MM-DD, valid through that day
+
+ignore: []

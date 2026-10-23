@@ -1,0 +1,99 @@
+# This repo's side of the vulnerability gate: the SBOM job is the only
+# per-repo part. The scan and the policy (fail on CISA KEV, or EPSS >= 0.1
+# and CVSS >= 7.0) live in simpleviz's shared vuln-gate.yml; its
+# docs/vuln-gate.md has the details. Suppress a finding in .vuln-ignore.yaml.
+name: Vulnerabilities
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  # new CVEs land on unchanged code too
+  schedule:
+    - cron: '41 5 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  # renovate: datasource=java-version depName=java-jdk extractVersion=^(?<version>\d+\.\d+\.\d+)
+  JAVA_VERSION: 25.0.4
+  # renovate: datasource=node-version depName=node
+  NODE_VERSION: 24.21.0
+  # renovate: datasource=github-tags depName=clojure/brew-install versioning=loose
+  CLOJURE_CLI_VERSION: 1.12.6.1673
+  # renovate: datasource=github-releases depName=babashka/babashka extractVersion=^v(?<version>.*)$
+  BB_VERSION: 1.13.225
+  # renovate: datasource=npm depName=@cyclonedx/cyclonedx-npm
+  CYCLONEDX_NPM_VERSION: 6.0.1
+
+jobs:
+  sbom:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install Clojure CLI and babashka
+        uses: DeLaGuardo/setup-clojure@6d46099eae24853c33c0482f2bb54edf4f1a4c74 # 13.7.0
+        with:
+          cli: ${{ env.CLOJURE_CLI_VERSION }}
+          bb: ${{ env.BB_VERSION }}
+
+      - name: Cache Maven and shadow-cljs deps
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.m2/repository
+            ~/.gitlibs
+          key: deps-${{ hashFiles('deps.edn', 'shadow-cljs.edn', 'bb.edn') }}
+
+      # dev dependencies included: they are all hammer has (jsdom, puppeteer-core, shadow-cljs)
+      - name: SBOM of the npm packages
+        run: |
+          mkdir -p sbom
+          npx --yes "@cyclonedx/cyclonedx-npm@${CYCLONEDX_NPM_VERSION}" \
+            --package-lock-only --output-format JSON --output-file sbom/npm.cdx.json
+
+      - run: npm ci --ignore-scripts
+
+      # the jars shadow-cljs compiles with: ClojureScript, the Closure compiler, …
+      - name: SBOM of the shadow-cljs classpath
+        uses: sstoehrm/simpleviz/.github/actions/sbom-jars@4bab4112d4df60baea9cd7c7c187459209750eaa
+        with:
+          classpath-command: npx shadow-cljs classpath
+          output: sbom/shadow-cljs.cdx.json
+
+      # deps.edn's :build alias: tools.build and deps-deploy, which build and deploy the jar
+      - name: SBOM of the jar build
+        uses: sstoehrm/simpleviz/.github/actions/sbom-jars@4bab4112d4df60baea9cd7c7c187459209750eaa
+        with:
+          classpath-command: clojure -Spath -A:build
+          output: sbom/build.cdx.json
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sbom
+          path: sbom/
+          if-no-files-found: error
+          overwrite: true
+
+  # Pinned to the same simpleviz commit as sbom-jars above; bump both together
+  # (Renovate's digest updates should keep them in step).
+  gate:
+    needs: sbom
+    uses: sstoehrm/simpleviz/.github/workflows/vuln-gate.yml@4bab4112d4df60baea9cd7c7c187459209750eaa
+    with:
+      sbom-artifact: sbom

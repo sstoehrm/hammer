@@ -10,3 +10,5 @@
 /.npmrc             @sstoehrm
 /SECURITY.md        @sstoehrm
 /LICENSE            @sstoehrm
+/.vuln-ignore.yaml  @sstoehrm
+/.clj-kondo/        @sstoehrm

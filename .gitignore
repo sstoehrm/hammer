@@ -3,3 +3,13 @@ target/
 .shadow-cljs/
 .cpcache/
 examples/*/public/js/
+.clj-kondo/.cache/
+.lsp/
+.calva/
+.nrepl-port
+.idea/
+.vscode/
+*.iml
+.DS_Store
+.env
+.env.*

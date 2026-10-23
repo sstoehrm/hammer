@@ -1,0 +1,9 @@
+;; hammer's component macros, for clj-kondo: see hammer/kondo.clj
+{:hooks {:macroexpand {hammer.core/defc hammer.kondo/defc
+                       hammer.canvas/defdraw hammer.kondo/defdraw
+                       hammer.canvas/defloop hammer.kondo/defdraw
+                       hammer.gl/defdraw hammer.kondo/defdraw
+                       hammer.gl/defloop hammer.kondo/defdraw
+                       hammer.tpl-macros/defboth hammer.kondo/defboth}}
+ ;; the macro tests hand expand-error forms that are meant not to compile
+ :linters {:unresolved-symbol {:exclude [(hammer.macro-probe/expand-error)]}}}

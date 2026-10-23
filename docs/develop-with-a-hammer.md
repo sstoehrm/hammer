@@ -431,12 +431,22 @@ as a `:local/root` dep (`cd examples/counter && clj -M:dev` → http://localhost
 | Task | |
 |---|---|
 | `npm test` | the test suite (shadow-cljs `:node-test`, jsdom) |
+| `clojure -M:lint --lint src test` | clj-kondo; `.clj-kondo/` teaches it `defc`, `defdraw` and `defloop` |
 | `bb loc` | non-blank, non-comment lines in `src/hammer` |
 | `bb sizes` | builds the dom/canvas/gl size apps, prints raw and gzip sizes, fails if a bundle carries another variant's namespaces |
 | `bb bench-canvas` | the canvas benchmark ([bench/canvas](../bench/canvas/README.md)) |
 
-CI (`.github/workflows/ci.yml`) runs the tests, `bb sizes`, the release builds
-and a jar build on every push to `main` and every pull request.
+CI (`.github/workflows/ci.yml`) runs clj-kondo (failing on errors), the tests,
+`bb sizes`, the release builds and a jar build on every push to `main` and every
+pull request.
+
+The vulnerability gate (`.github/workflows/vulns.yml`) runs on the same events
+and weekly: it writes CycloneDX SBOMs of the npm packages, the shadow-cljs
+classpath and the `:build` alias, and simpleviz's shared gate scans them with
+OSV-Scanner. It fails only on a finding in the CISA KEV catalog, or with EPSS
+>= 0.1 and CVSS >= 7.0; everything else is reported in the job summary. To let
+a finding pass for a while, add it to `.vuln-ignore.yaml` with a reason and an
+expiry date.
 
 **Releasing:** bump the `hammer-app` plugin to the new version (both
 manifests, `.claude-plugin` and `.codex-plugin`), merge that, then tag the
@@ -448,7 +458,9 @@ merged commit and push the tag:
 `.github/workflows/release.yml` then checks the tag (and fails unless both
 plugin manifests carry its version, so the skill is always released with the
 library), runs the tests, builds
-`target/hammer-0.1.0.jar` and creates a GitHub release with the jar attached.
+`target/hammer-0.1.0.jar`, attests its build provenance (`gh attestation verify
+hammer-0.1.0.jar --repo sstoehrm/hammer`) and creates a GitHub release with the
+jar attached.
 Apps use the tag through the git coordinate above.
 
 Clojars is optional and off: the workflow deploys `io.github.sstoehrm/hammer`
@@ -460,9 +472,11 @@ Locally: `bb jar 0.1.0`, or `clojure -T:build deploy :version '"0.1.0"'`.
 Every dependency is pinned to an exact version: npm (`.npmrc` has
 `save-exact=true`), `deps.edn`, the GitHub Actions (by commit SHA), the runner
 and the CI toolchain (Java, Node, Clojure CLI, babashka, in the workflows'
-`env`). Dependabot (`.github/dependabot.yml`) opens update PRs weekly for npm
-and the GitHub Actions; the Clojure deps, the runner and the CI toolchain
-versions are bumped by hand.
+`env`). Renovate (`renovate.json`) opens update PRs weekly for npm, `deps.edn`,
+the GitHub Actions and the toolchain versions (each `env` pin carries a
+`# renovate:` comment naming its source), minor and patch grouped into one PR.
+The runner image, and OSV-Scanner and Syft inside simpleviz's shared gate, are
+bumped by hand.
 
 The repository-local `hammer-internals` skill (`.claude/skills/`) explains the
 internals to an agent working on hammer itself.
