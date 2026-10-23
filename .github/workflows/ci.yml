@@ -5,10 +5,17 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
 env:
+  # renovate: datasource=java-version depName=java-jdk extractVersion=^(?<version>\d+\.\d+\.\d+)
   JAVA_VERSION: 25.0.4
+  # renovate: datasource=node-version depName=node
   NODE_VERSION: 24.21.0
+  # renovate: datasource=github-tags depName=clojure/brew-install versioning=loose
   CLOJURE_CLI_VERSION: 1.12.6.1673
+  # renovate: datasource=github-releases depName=babashka/babashka extractVersion=^v(?<version>.*)$
   BB_VERSION: 1.13.225
 
 jobs:
@@ -16,6 +23,8 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
@@ -40,6 +49,9 @@ jobs:
             ~/.m2/repository
             ~/.gitlibs
           key: deps-${{ hashFiles('deps.edn', 'shadow-cljs.edn', 'bb.edn') }}
+
+      - name: Lint (clj-kondo, fails on errors)
+        run: clojure -M:lint --fail-level error --lint src test examples/*/src size bench/canvas/src
 
       - run: npm ci
 

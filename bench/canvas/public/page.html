@@ -17,7 +17,8 @@
   // ?src=<variant script>: /out/<build>/main.js (hammer) or /vanilla/<app>.js
   (function () {
     var src = new URLSearchParams(location.search).get('src') || '';
-    if (src.charAt(0) !== '/') throw new Error('bench: bad src ' + src);
+    // same-origin scripts only: '//host/x.js' would load from another host
+    if (!/^\/(out|vanilla)\/[\w.\/-]+\.js$/.test(src) || src.indexOf('..') !== -1) throw new Error('bench: bad src ' + src);
     var s = document.createElement('script');
     s.src = src;
     document.body.appendChild(s);

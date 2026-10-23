@@ -11,11 +11,18 @@ on:
 
 permissions:
   contents: write
+  # build provenance for the jar (gh attestation verify)
+  id-token: write
+  attestations: write
 
 env:
+  # renovate: datasource=java-version depName=java-jdk extractVersion=^(?<version>\d+\.\d+\.\d+)
   JAVA_VERSION: 25.0.4
+  # renovate: datasource=node-version depName=node
   NODE_VERSION: 24.21.0
+  # renovate: datasource=github-tags depName=clojure/brew-install versioning=loose
   CLOJURE_CLI_VERSION: 1.12.6.1673
+  # renovate: datasource=github-releases depName=babashka/babashka extractVersion=^v(?<version>.*)$
   BB_VERSION: 1.13.225
 
 jobs:
@@ -62,6 +69,11 @@ jobs:
 
       - name: Build the jar
         run: bb jar ${{ github.ref_name }}
+
+      - name: Attest the jar's build provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: target/hammer-*.jar
 
       - name: Create GitHub release
         env:

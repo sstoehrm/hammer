@@ -83,6 +83,11 @@ To [re-frame](https://github.com/day8/re-frame) for the API inspiration, and to
 Artūr Girenko for [pneumatic-tubes](https://github.com/drapanjanas/pneumatic-tubes),
 the idea behind `hammer.tubes`.
 
+## Privacy
+
+hammer collects no data: no telemetry, no analytics. Its `:http` effect and
+tubes send only what your app hands them, to the URLs your app names.
+
 ## License
 
 [MIT](LICENSE), for everything in this repository: the code, the docs, and the
