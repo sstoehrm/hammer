@@ -9,25 +9,37 @@
    :task (shell "clojure -T:build jar :version" (pr-str (first *command-line-args*)))}
 
   release:check
-  {:doc "Fails unless the tag (v0.1.0) is a plain semver version and both hammer-app plugin manifests carry its version"
+  {:doc "Fails unless the tag (v0.1.0) is a plain semver version, both hammer-app plugin manifests carry its version and both marketplaces pin the plugin to it"
    :task (let [t (first *command-line-args*)
                fail! (fn [& msg] (binding [*out* *err*] (apply println "release:check:" msg)) (System/exit 1))]
            (when-not (and t (re-matches (re-pattern "v\\d+\\.\\d+\\.\\d+(-[\\w.]+)?") t))
              (fail! "tag must look like v0.1.0, got" (pr-str t)))
            (let [v (subs t 1)
+                 json (fn [f] (cheshire.core/parse-string (slurp f)))
                  manifests ["plugins/hammer-app/.claude-plugin/plugin.json"
                             "plugins/hammer-app/.codex-plugin/plugin.json"]
-                 wrong (for [m manifests
-                             :let [mv (get (cheshire.core/parse-string (slurp m)) "version")]
-                             :when (not= v mv)]
-                         (str m " has " (pr-str mv)))]
+                 ;; the marketplaces serve the plugin from the release tag, so
+                 ;; the skill installed always matches a released library
+                 marketplaces [".claude-plugin/marketplace.json"
+                               ".agents/plugins/marketplace.json"]
+                 wrong (concat
+                        (for [m manifests
+                              :let [mv (get (json m) "version")]
+                              :when (not= v mv)]
+                          (str m " has version " (pr-str mv)))
+                        (for [m marketplaces
+                              :let [refs (for [p (get (json m) "plugins")
+                                               :when (= "hammer-app" (get p "name"))]
+                                           (get-in p ["source" "ref"]))]
+                              :when (not= [t] refs)]
+                          (str m " pins hammer-app to " (pr-str (vec refs)))))]
              (when (seq wrong)
-               (fail! (str "the plugin version must match the tag " t " (bb release:bump " v "):\n  "
+               (fail! (str "the plugin must match the tag " t " (bb release:bump " v "):\n  "
                            (str/join "\n  " wrong)))))
            (println "release:check: ok" t))}
 
   release:bump
-  {:doc "Sets the hammer-app plugin version in both manifests: bb release:bump 0.2.0 (then commit, merge, tag v0.2.0)"
+  {:doc "Sets the hammer-app plugin version in both manifests and pins both marketplaces to its tag: bb release:bump 0.2.0 (then commit, merge, tag v0.2.0 right away)"
    :task (let [v (first *command-line-args*)]
            (when-not (and v (re-matches (re-pattern "\\d+\\.\\d+\\.\\d+(-[\\w.]+)?") v))
              (binding [*out* *err*] (println "release:bump: version must look like 0.2.0, got" (pr-str v)))
@@ -37,7 +49,12 @@
              ;; replace the value only, so the file keeps its formatting
              (spit m (str/replace-first (slurp m) (re-pattern "\"version\": \"[^\"]*\"")
                                         (str "\"version\": \"" v "\"")))
-             (println "release:bump:" m "→" v)))}
+             (println "release:bump:" m "→" v))
+           (doseq [m [".claude-plugin/marketplace.json"
+                      ".agents/plugins/marketplace.json"]]
+             (spit m (str/replace-first (slurp m) (re-pattern "\"ref\": \"v[^\"]*\"")
+                                        (str "\"ref\": \"v" v "\"")))
+             (println "release:bump:" m "→" (str "v" v))))}
 
   loc
   {:doc "Non-blank, non-comment lines in src/hammer"
