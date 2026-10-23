@@ -12,7 +12,7 @@
         "source": "git-subdir",
         "url": "sstoehrm/hammer",
         "path": "plugins/hammer-app",
-        "ref": "v0.1.2"
+        "ref": "v0.1.3"
       },
       "description": "Teaches Claude hammer's public API and DOM behaviour for writing app UIs: components, db paths, events, effects, forms, lists, errors and testing"
     }
