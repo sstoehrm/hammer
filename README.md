@@ -82,3 +82,8 @@ No clue. Use with caution.
 To [re-frame](https://github.com/day8/re-frame) for the API inspiration, and to
 Artūr Girenko for [pneumatic-tubes](https://github.com/drapanjanas/pneumatic-tubes),
 the idea behind `hammer.tubes`.
+
+## License
+
+[MIT](LICENSE), for everything in this repository: the code, the docs, and the
+images under `assets/` and the examples.
