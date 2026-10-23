@@ -7,8 +7,10 @@
     {
       "name": "hammer-app",
       "source": {
-        "source": "local",
-        "path": "./plugins/hammer-app"
+        "source": "git-subdir",
+        "url": "https://github.com/sstoehrm/hammer.git",
+        "path": "./plugins/hammer-app",
+        "ref": "v0.1.2"
       },
       "policy": {
         "installation": "AVAILABLE",

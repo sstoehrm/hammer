@@ -448,16 +448,23 @@ OSV-Scanner. It fails only on a finding in the CISA KEV catalog, or with EPSS
 a finding pass for a while, add it to `.vuln-ignore.yaml` with a reason and an
 expiry date.
 
+**The skill follows the library:** both marketplaces
+(`.claude-plugin/marketplace.json`, `.agents/plugins/marketplace.json`) serve
+`hammer-app` from the latest release tag, not from `main`, so the installed skill
+always describes a released library. A skill change on `main` reaches users with
+the next release.
+
 **Releasing:** bump the `hammer-app` plugin to the new version (both
-manifests, `.claude-plugin` and `.codex-plugin`), merge that, then tag the
-merged commit and push the tag:
+manifests, `.claude-plugin` and `.codex-plugin`, and both marketplaces' tag
+pin), merge that, then tag the merged commit and push the tag right away
+(until the tag exists, the marketplaces point at a tag that isn't there yet):
 
     bb release:bump 0.2.0          # commit and merge this first
     git tag v0.2.0 && git push origin v0.2.0
 
 `.github/workflows/release.yml` then checks the tag (and fails unless both
-plugin manifests carry its version, so the skill is always released with the
-library), runs the tests, builds
+plugin manifests carry its version and both marketplaces pin the plugin to it,
+so the skill is always released with the library), runs the tests, builds
 `target/hammer-0.1.0.jar`, attests its build provenance (`gh attestation verify
 hammer-0.1.0.jar --repo sstoehrm/hammer`) and creates a GitHub release with the
 jar attached.
