@@ -3,7 +3,8 @@ name: Release
 # Push a tag to release: git tag v0.1.0 && git push origin v0.1.0
 # Creates a GitHub release with the jar attached, and deploys to Clojars when
 # the repository secrets CLOJARS_USERNAME and CLOJARS_PASSWORD (a deploy token)
-# are set.
+# are set. The deploy is Maven's (preinstalled on the runner); setup-java
+# writes the credentials into ~/.m2/settings.xml as server "clojars".
 
 on:
   push:
@@ -17,13 +18,15 @@ permissions:
 
 env:
   # renovate: datasource=java-version depName=java-jdk extractVersion=^(?<version>\d+\.\d+\.\d+)
-  JAVA_VERSION: 25.0.4
+  JAVA_VERSION: 25.0.5
   # renovate: datasource=node-version depName=node
-  NODE_VERSION: 24.21.0
+  NODE_VERSION: 24.22.1
   # renovate: datasource=github-tags depName=clojure/brew-install versioning=loose
   CLOJURE_CLI_VERSION: 1.12.6.1673
   # renovate: datasource=github-releases depName=babashka/babashka extractVersion=^v(?<version>.*)$
-  BB_VERSION: 1.13.225
+  BB_VERSION: 1.13.226
+  # renovate: datasource=maven depName=org.apache.maven.plugins:maven-deploy-plugin
+  MAVEN_DEPLOY_PLUGIN_VERSION: 3.2.0
 
 jobs:
   release:
@@ -39,6 +42,9 @@ jobs:
         with:
           distribution: temurin
           java-version: ${{ env.JAVA_VERSION }}
+          server-id: clojars
+          server-username: CLOJARS_USERNAME
+          server-password: CLOJARS_PASSWORD
 
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
@@ -86,4 +92,11 @@ jobs:
 
       - name: Deploy to Clojars
         if: env.CLOJARS_USERNAME != '' && env.CLOJARS_PASSWORD != ''
-        run: clojure -T:build deploy :version '"${{ github.ref_name }}"'
+        run: |
+          set -euo pipefail
+          jar=(target/hammer-*.jar)
+          mvn -B --no-transfer-progress \
+            "org.apache.maven.plugins:maven-deploy-plugin:${MAVEN_DEPLOY_PLUGIN_VERSION}:deploy-file" \
+            -Dfile="${jar[0]}" \
+            -DpomFile=target/classes/META-INF/maven/io.github.sstoehrm/hammer/pom.xml \
+            -DrepositoryId=clojars -Durl=https://clojars.org/repo
